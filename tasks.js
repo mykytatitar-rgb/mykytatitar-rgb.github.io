@@ -1,0 +1,1221 @@
+/* Справи — особистий список задач. Окремий сайт і окремий застосунок:
+   ставиться на телефон і комп'ютер власною іконкою.
+
+   Дані — у базі Supabase, таблиця records, види todo_task і todo_list
+   (та сама база, що в «Вектора»; його записи й ці одне одному не
+   заважають — кожен застосунок читає лише свої види). Кожне завдання —
+   окремий рядок: правка на телефоні не перетирає іншої правки на
+   комп'ютері.
+
+   Інтерфейс ніколи не чекає на мережу. Усе спершу лягає в браузер, а
+   обмін іде у фоні; без інтернету зміни чекають у черзі. */
+
+(function () {
+  'use strict';
+
+  var cfg = window.SPRAVY_CONFIG || { url: '', anonKey: '' };
+  var BASE = (cfg.url || '').replace(/\/+$/, '');
+
+  var AUTH = 'spravy.auth';           // сесія входу
+  var DB_KEY = 'spravy.db';           // локальна копія: { lists: {id: …}, tasks: {id: …} }
+  var OUT_KEY = 'spravy.outbox';      // що не встигло поїхати: {"kind/id": номер правки | "del"}
+  var SINCE_KEY = 'spravy.since';     // час сервера, до якого вже все прочитано
+  var OWNER_KEY = 'spravy.owner';     // чия це копія; інший вхід — інша копія
+  var UI_KEY = 'spravy.ui';           // налаштування цього пристрою: тема, розмір, сортування
+  var IMPORT_KEY = 'spravy.import';   // перенесення з посилання, що чекає входу
+
+  var K_TASK = 'todo_task', K_LIST = 'todo_list';
+  var PUSH_DELAY = 1200;
+  var PULL_MS = 20000;                // як часто дивитися, чи не змінилось щось на іншому пристрої
+  var RETRY_MS = 15000;
+  var OVERLAP_MS = 90000;             // дочитуємо трохи назад — на випадок розбіжності годинників
+  var PAGE = 1000;
+
+  var COLORS = ['#82c8b8', '#8fb0e0', '#e0a87c', '#d99aa8', '#b3a6e0', '#b9c67e', '#9aa0ad'];
+  var SIZES = [['S', 15], ['M', 17], ['L', 19], ['XL', 21]];
+  var REPEATS = { none: 'Не повторювати', daily: 'Щодня', weekdays: 'Щобудні', weekly: 'Щотижня', monthly: 'Щомісяця' };
+
+  /* ============================================================
+     Дрібниці
+     ============================================================ */
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* сховище недоступне — живемо в пам'яті */ } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  function readJSON(k, def) {
+    try { var v = JSON.parse(lsGet(k) || 'null'); return v == null ? def : v; } catch (e) { return def; }
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function parseDay(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function addDays(s, n) { var d = parseDay(s); d.setDate(d.getDate() + n); return iso(d); }
+  function today() { return iso(new Date()); }
+  function isDay(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+
+  function dueLabel(s) {
+    var diff = Math.round((parseDay(s) - parseDay(today())) / 864e5);
+    if (diff === 0) return 'Сьогодні';
+    if (diff === 1) return 'Завтра';
+    if (diff === -1) return 'Вчора';
+    if (diff < 0 && diff > -7) return (-diff) + ' дн. тому';
+    return parseDay(s).toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+
+  /** Наступна дата повторюваного завдання — найближча після сьогодні. */
+  function nextDue(s, rep) {
+    function step(d) {
+      if (rep === 'daily') return addDays(d, 1);
+      if (rep === 'weekly') return addDays(d, 7);
+      if (rep === 'weekdays') {
+        var n = addDays(d, 1);
+        while (parseDay(n).getDay() === 0 || parseDay(n).getDay() === 6) n = addDays(n, 1);
+        return n;
+      }
+      if (rep === 'monthly') { var x = parseDay(d); x.setMonth(x.getMonth() + 1); return iso(x); }
+      return d;
+    }
+    var n = step(s || today());
+    while (n <= today()) n = step(n);
+    return n;
+  }
+
+  function plural(n) {
+    var a = n % 10, b = n % 100;
+    return (a === 1 && b !== 11) || (a >= 2 && a <= 4 && (b < 12 || b > 14)) ? 'завдання' : 'завдань';
+  }
+
+  function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3); }
+
+  /* Капс у назвах. Абревіатури лишаються великими, відомі назви — як пишуться. */
+  var KEEP = { SQL: 'SQL', TV: 'TV', ML: 'ML', DA: 'DA', 'ЗНО': 'ЗНО', AI: 'AI', YOUTUBE: 'YouTube',
+    GOOGLE: 'Google', PREPLY: 'Preply', GEMINI: 'Gemini', WHOOP: 'Whoop' };
+  function isShouting(s) {
+    var l = s.match(/\p{L}/gu) || [];
+    return l.length > 3 && l.filter(function (c) { return c !== c.toLowerCase(); }).length / l.length > 0.7;
+  }
+  function calm(s) {
+    var x = s.replace(/\p{L}+/gu, function (w) { return KEEP[w] || w.toLowerCase(); });
+    var i = x.search(/\p{L}/u);
+    return i < 0 ? x : x.slice(0, i) + x[i].toUpperCase() + x.slice(i + 1);
+  }
+
+  function h(tag, attrs) {
+    var el = document.createElement(tag);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v == null || v === false) return;
+      if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else if (k === 'style') el.style.cssText = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    });
+    (function add(kids) {
+      kids.forEach(function (k) {
+        if (k == null || k === false) return;
+        if (Array.isArray(k)) add(k);
+        else el.append(k.nodeType ? k : String(k));
+      });
+    })(Array.prototype.slice.call(arguments, 2));
+    return el;
+  }
+
+  var I = {
+    addTask: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+    star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.25 4.1 1 5.8L12 16.9l-5.25 2.7 1-5.8L3.5 9.7l5.9-.9z"/>',
+    dots: '<circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    repeat: '<path d="M17 3l3 3-3 3"/><path d="M4 11V9a3 3 0 013-3h13"/><path d="M7 21l-3-3 3-3"/><path d="M20 13v2a3 3 0 01-3 3H4"/>',
+    chev: '<path d="M9 6l6 6-6 6"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>',
+    sub: '<path d="M6 4v9a3 3 0 003 3h9"/><path d="M15 13l3 3-3 3"/>'
+  };
+  function svg(d, size, sw) {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('width', size || 18); s.setAttribute('height', size || 18);
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', sw || 2); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.innerHTML = d;
+    return s;
+  }
+
+  /* ============================================================
+     Дані
+     ============================================================
+
+     Записи завжди збираються цими двома функціями, з полями в одному
+     порядку: так відбиток (JSON) того самого запису однаковий і тут, і
+     після приходу з сервера, і зайвої відправки не буває. */
+
+  function mkTask(o) {
+    return {
+      id: String(o.id),
+      listId: String(o.listId || ''),
+      title: String(o.title || ''),
+      notes: String(o.notes || ''),
+      due: isDay(o.due) ? o.due : '',
+      repeat: REPEATS[o.repeat] ? o.repeat : 'none',
+      starred: !!o.starred,
+      done: !!o.done,
+      doneAt: isDay(o.doneAt) ? o.doneAt : '',
+      parentId: String(o.parentId || ''),
+      order: Number(o.order) || 0
+    };
+  }
+
+  function mkList(o) {
+    return {
+      id: String(o.id),
+      name: String(o.name || 'Список'),
+      color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : COLORS[0],
+      visible: o.visible !== false,
+      order: Number(o.order) || 0
+    };
+  }
+
+  var db = { lists: {}, tasks: {} };
+  var outbox = {};
+  var snap = {};        // "kind/id" → JSON запису, яким його востаннє бачив обмін
+  var since = null;
+  var seq = Date.now(); // номер правки: щоб відрізнити «відправлене» від «змінене під час відправки»
+  var ready = false;    // чи є що показувати — локальна копія або перше читання з сервера
+
+  var ui = { view: 'board', openDone: {}, sort: {}, size: 17, theme: 'auto', mList: '' };
+
+  function bagOf(kind) { return kind === K_TASK ? db.tasks : kind === K_LIST ? db.lists : null; }
+
+  function eachRec(fn) {
+    Object.keys(db.lists).forEach(function (id) { fn(K_LIST, db.lists[id]); });
+    Object.keys(db.tasks).forEach(function (id) { fn(K_TASK, db.tasks[id]); });
+  }
+
+  function loadLocal() {
+    var raw = readJSON(DB_KEY, null);
+    db = { lists: {}, tasks: {} };
+    if (raw && raw.lists && raw.tasks) {
+      Object.keys(raw.lists).forEach(function (id) { db.lists[id] = mkList(raw.lists[id]); });
+      Object.keys(raw.tasks).forEach(function (id) { db.tasks[id] = mkTask(raw.tasks[id]); });
+      ready = true;
+    }
+    outbox = readJSON(OUT_KEY, {}) || {};
+    since = lsGet(SINCE_KEY) || null;
+    snap = {};
+    eachRec(function (kind, rec) { snap[kind + '/' + rec.id] = JSON.stringify(rec); });
+    Object.assign(ui, readJSON(UI_KEY, {}));
+  }
+
+  function saveLocal() { lsSet(DB_KEY, JSON.stringify(db)); }
+  function saveOutbox() { lsSet(OUT_KEY, JSON.stringify(outbox)); }
+  function saveUi() { lsSet(UI_KEY, JSON.stringify(ui)); }
+
+  function forgetLocal() {
+    db = { lists: {}, tasks: {} };
+    outbox = {}; snap = {}; since = null; ready = false;
+    lsDel(DB_KEY); lsDel(OUT_KEY); lsDel(SINCE_KEY);
+  }
+
+  /** Що змінилося з минулого разу — у чергу на відправку. Правити окремо нічого не треба. */
+  function detect() {
+    var seen = {};
+    eachRec(function (kind, rec) {
+      var key = kind + '/' + rec.id;
+      var j = JSON.stringify(rec);
+      seen[key] = 1;
+      if (snap[key] !== j) { snap[key] = j; outbox[key] = ++seq; }
+    });
+    Object.keys(snap).forEach(function (key) {
+      if (!seen[key]) { delete snap[key]; outbox[key] = 'del'; }
+    });
+  }
+
+  var quiet = false;
+  function commit() {
+    detect();
+    saveLocal();
+    saveOutbox();
+    if (quiet) { renderSide(); renderHead(); renderBoard(); } else render();
+    if (Object.keys(outbox).length) schedule(PUSH_DELAY);
+  }
+
+  function lists() {
+    return Object.keys(db.lists).map(function (id) { return db.lists[id]; })
+      .sort(function (a, b) { return a.order - b.order || a.name.localeCompare(b.name); });
+  }
+  function tasks() { return Object.keys(db.tasks).map(function (id) { return db.tasks[id]; }); }
+  function listOf(id) { return db.lists[id] || null; }
+  function childrenOf(id) { return tasks().filter(function (t) { return t.parentId === id; }); }
+  function openCount(listId) {
+    return tasks().filter(function (t) { return t.listId === listId && !t.done && !t.parentId; }).length;
+  }
+
+  /* ============================================================
+     Вхід
+     ============================================================
+
+     Сесію поновлюють під замком, спільним для всіх вкладок, і з
+     перечитуванням сховища. Supabase при кожному поновленні гасить старий
+     ключ, а повторне використання старого вважає крадіжкою й закриває
+     сесію цілком — тож дві вкладки, що поновлюють одночасно, вибили б
+     вхід на цьому пристрої. */
+
+  var sessionCache;
+  function sess() {
+    if (sessionCache === undefined) sessionCache = readJSON(AUTH, null);
+    return sessionCache;
+  }
+  function setSess(s) {
+    sessionCache = s || null;
+    if (s) lsSet(AUTH, JSON.stringify(s)); else lsDel(AUTH);
+  }
+  function freshSess() { sessionCache = undefined; return sess(); }
+  function signedIn() { var s = sess(); return !!(s && s.refresh_token); }
+
+  window.addEventListener('storage', function (e) {
+    if (e.key === AUTH) sessionCache = undefined;   // сусідня вкладка поновила чи закрила сесію
+  });
+
+  function withAuthLock(fn) {
+    if (navigator.locks && navigator.locks.request) return navigator.locks.request('spravy-auth-refresh', fn);
+    return fn();
+  }
+
+  var refreshing = null;
+  function refresh() {
+    if (refreshing) return refreshing;
+    var used = sess();
+    if (!used || !used.refresh_token) return Promise.reject(expired('Потрібен вхід'));
+
+    refreshing = withAuthLock(function () {
+      var now = freshSess();
+      if (!now || !now.refresh_token) throw expired('Сесія закрита. Увійдіть знову');
+      if (now.refresh_token !== used.refresh_token) return now;   // інша вкладка вже поновила
+
+      return fetch(BASE + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: { apikey: cfg.anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: now.refresh_token })
+      }).then(function (res) {
+        if (!res.ok) {
+          var after = freshSess();
+          if (after && after.refresh_token && after.refresh_token !== now.refresh_token) return after;
+          throw expired('Сесія втратила чинність. Увійдіть знову');
+        }
+        return res.json().then(function (j) {
+          var next = { access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || now.email };
+          setSess(next);
+          return next;
+        });
+      });
+    }).then(function (s) {
+      refreshing = null;
+      return s;
+    }, function (e) {
+      refreshing = null;
+      if (e && e.expired) setSess(null);   // на збої мережі сесію не чіпаємо: вона, найпевніше, жива
+      throw e;
+    });
+    return refreshing;
+  }
+
+  function expired(msg) { var e = new Error(msg); e.expired = true; return e; }
+
+  function authFetch(path, opts) {
+    var headers = { apikey: cfg.anonKey, 'Content-Type': 'application/json' };
+    var s = sess();
+    if (s && s.access_token) headers.Authorization = 'Bearer ' + s.access_token;
+    return fetch(BASE + path, { method: opts.method || 'GET', headers: headers, body: opts.body });
+  }
+
+  /* Токен живе близько години: на першу відмову 401 поновлюємо його й повторюємо запит один раз. */
+  function api(path, opts) {
+    opts = opts || {};
+    return authFetch(path, opts).then(function (res) {
+      if (res.status !== 401) return res;
+      return refresh().then(function () { return authFetch(path, opts); });
+    }).then(function (res) {
+      if (res.status === 401) throw expired('Сесія втратила чинність. Увійдіть знову');
+      if (!res.ok) {
+        return res.text().then(function (t) {
+          var msg = t;
+          try { var j = JSON.parse(t); msg = j.message || j.msg || j.error_description || t; } catch (e) {}
+          throw new Error(msg || ('Сервер відповів ' + res.status));
+        });
+      }
+      return res;
+    });
+  }
+
+  function rpc(name, args) {
+    return api('/rest/v1/rpc/' + name, { method: 'POST', body: JSON.stringify(args) });
+  }
+
+  function signIn(email, password) {
+    return fetch(BASE + '/auth/v1/token?grant_type=password', {
+      method: 'POST',
+      headers: { apikey: cfg.anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, password: password })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (j) {
+        if (!res.ok) {
+          var code = j.error_code || j.error || '';
+          if (code === 'invalid_credentials' || code === 'invalid_grant') throw new Error('Пошта чи пароль не підходять');
+          throw new Error(j.error_description || j.msg || j.message || 'Не вдалося увійти');
+        }
+        setSess({ access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || email });
+      });
+    });
+  }
+
+  function deviceName() {
+    var ua = navigator.userAgent;
+    var os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac/.test(ua) ? 'Mac' : 'інший';
+    var br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : /Firefox\//.test(ua) ? 'Firefox' : '';
+    return 'Справи · ' + os + (br ? ' / ' + br : '');
+  }
+
+  /* ============================================================
+     Обмін
+     ============================================================
+
+     Спершу відправляємо своє, потім забираємо чуже — завжди по черзі, не
+     разом: інакше відповідь читання, що вийшло до відправки, могла б
+     повернути на екран старий стан щойно зміненого завдання. */
+
+  var syncing = false, again = false, timer = null;
+  var lastProblem = '';   // чому не вдалося — для першого запуску, коли показати ще нічого
+
+  function schedule(ms) {
+    clearTimeout(timer);
+    timer = setTimeout(sync, ms);
+  }
+
+  function setSync(s, text) {
+    var el = $('sync');
+    if (!el) return;
+    el.dataset.s = s;
+    el.lastElementChild.textContent = text;
+  }
+
+  function sync() {
+    clearTimeout(timer);
+    if (!BASE || !signedIn()) return Promise.resolve();
+    if (syncing) { again = true; return Promise.resolve(); }
+    syncing = true;
+    if (Object.keys(outbox).length) setSync('wait', 'Зберігаю…');
+
+    var failed = false;
+    return push().then(pull).then(function () {
+      lastProblem = '';
+      setSync('ok', 'Синхронізовано');
+      return afterPull();
+    }).catch(function (e) {
+      failed = true;
+      if (e && e.expired) { showLogin('Сесія закінчилась. Увійдіть ще раз, нічого не загубиться.'); return; }
+      if (navigator.onLine === false || (e && e.name === 'TypeError')) {
+        lastProblem = 'Немає зв\'язку з сервером. Справи з\'являться, щойно буде інтернет.';
+        setSync('local', 'Немає зв\'язку. Зміни збережені тут і поїдуть самі');
+      } else {
+        lastProblem = 'Не вдалося отримати справи: ' + ((e && e.message) || e);
+        setSync('error', 'Не вдалося синхронізувати: ' + ((e && e.message) || e));
+      }
+      if (!ready) renderBoard();
+    }).then(function () {
+      syncing = false;
+      if (again && !failed) { again = false; schedule(300); }
+      else if (Object.keys(outbox).length) schedule(failed ? RETRY_MS : PUSH_DELAY);
+    });
+  }
+
+  function push() {
+    var keys = Object.keys(outbox);
+    if (!keys.length) return Promise.resolve();
+    var i = 0;
+    function next() {
+      if (i >= keys.length) return Promise.resolve();
+      var key = keys[i++];
+      var sent = outbox[key];
+      if (sent === undefined) return next();
+      var cut = key.indexOf('/'), kind = key.slice(0, cut), id = key.slice(cut + 1);
+      var bag = bagOf(kind);
+      var rec = bag && bag[id];
+      var call = rec
+        ? rpc('save_record', { p_kind: kind, p_id: id, p_data: rec, p_device: deviceName() })
+        : rpc('delete_record', { p_kind: kind, p_id: id, p_device: deviceName() });
+      return call.then(function () {
+        // змінили, поки летіло, — лишаємо в черзі, поїде наступним колом
+        if (outbox[key] === sent) delete outbox[key];
+        saveOutbox();
+        return next();
+      });
+    }
+    // кілька запитів паралельно: перше перенесення (два десятки рядків) не тягнеться секундами
+    return Promise.all([next(), next(), next(), next()]);
+  }
+
+  var firstPull = null;   // результат повного читання: чи порожньо на сервері
+
+  function pull() {
+    var full = !since;
+    var path = '/rest/v1/records?select=kind,id,data,deleted,updated_at' +
+      '&kind=in.(' + K_TASK + ',' + K_LIST + ')&order=updated_at.asc,kind.asc,id.asc';
+    if (!full) {
+      var from = Date.parse(String(since).replace(/(\.\d{3})\d+/, '$1')) - OVERLAP_MS;
+      path += '&updated_at=gte.' + encodeURIComponent(new Date(from).toISOString());
+    }
+    var rows = [];
+    function page(offset) {
+      return api(path + '&limit=' + PAGE + '&offset=' + offset)
+        .then(function (res) { return res.json(); })
+        .then(function (part) {
+          rows = rows.concat(part);
+          return part.length === PAGE ? page(offset + PAGE) : rows;
+        });
+    }
+    return page(0).then(function () {
+      var changed = 0, newest = since, present = {};
+      rows.forEach(function (row) {
+        if (!newest || row.updated_at > newest) newest = row.updated_at;
+        present[row.kind + '/' + row.id] = 1;
+        if (applyRow(row)) changed++;
+      });
+      if (full) {
+        /* Повне читання — правда сервера: прибираємо тутешнє, чого там немає
+           і що не чекає на відправку (лишки від іншого входу тощо). */
+        var drop = [];
+        eachRec(function (kind, rec) {
+          var key = kind + '/' + rec.id;
+          if (!present[key] && outbox[key] === undefined) drop.push([kind, rec.id, key]);
+        });
+        drop.forEach(function (d) { delete bagOf(d[0])[d[1]]; delete snap[d[2]]; changed++; });
+        firstPull = { empty: rows.length === 0 };
+      }
+      if (newest) { since = newest; lsSet(SINCE_KEY, since); }
+      if (changed || !ready) {
+        ready = true;
+        saveLocal();
+        if (dragId) renderLater = true; else render();
+      }
+    });
+  }
+
+  function applyRow(row) {
+    var key = row.kind + '/' + row.id;
+    if (outbox[key] !== undefined) return false;           // наше новіше ще не поїхало
+    var bag = bagOf(row.kind);
+    if (!bag) return false;
+    if (row.deleted) {
+      if (!bag[row.id]) return false;
+      delete bag[row.id];
+      delete snap[key];
+      return true;
+    }
+    if (!row.data || typeof row.data !== 'object') return false;
+    var rec = row.kind === K_TASK ? mkTask(Object.assign({}, row.data, { id: row.id })) : mkList(Object.assign({}, row.data, { id: row.id }));
+    var j = JSON.stringify(rec);
+    if (snap[key] === j && bag[row.id]) return false;
+    bag[row.id] = rec;
+    snap[key] = j;
+    return true;
+  }
+
+  /* Після першого читання: перенесення з посилання, а якщо на сервері
+     зовсім порожньо (жодного рядка, навіть видаленого) — перший список. */
+  function afterPull() {
+    var first = firstPull;
+    firstPull = null;
+    var pending = readJSON(IMPORT_KEY, null);
+    if (pending) { lsDel(IMPORT_KEY); applyImport(pending); return; }
+    if (first && first.empty && !Object.keys(db.lists).length) {
+      db.lists.my = mkList({ id: 'my', name: 'Мої справи', color: COLORS[0], visible: true, order: 0 });
+      commit();
+    }
+  }
+
+  /* ============================================================
+     Перенесення
+     ============================================================
+
+     Посилання виду #import=z.<дані> — список справ із попереднього
+     застосунку. Дані йдуть після «#», а цю частину адреси браузер серверу
+     не надсилає, тож вони не лишаються ні в коді сайту, ні в журналах. */
+
+  function b64bytes(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function decodeImport(code) {
+    if (code.slice(0, 2) === 'j.') return Promise.resolve(new TextDecoder().decode(b64bytes(code.slice(2)))).then(JSON.parse);
+    if (code.slice(0, 2) !== 'z.') return Promise.reject(new Error('Незнайомий формат посилання'));
+    if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('Цей браузер не розпаковує перенесення. Відкрийте посилання в Chrome'));
+    var stream = new Blob([b64bytes(code.slice(2))]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Response(stream).text().then(JSON.parse);
+  }
+
+  function takeImportFromUrl() {
+    var m = /[#&]import=([^&]+)/.exec(location.hash);
+    if (!m) return Promise.resolve();
+    history.replaceState(null, '', location.pathname + location.search);
+    return decodeImport(decodeURIComponent(m[1])).then(function (data) {
+      if (!data || !Array.isArray(data.lists) || !Array.isArray(data.tasks)) throw new Error('Посилання пошкоджене');
+      lsSet(IMPORT_KEY, JSON.stringify(data));
+    }).catch(function (e) {
+      toast('Не вдалося прочитати перенесення: ' + e.message);
+    });
+  }
+
+  function applyImport(data) {
+    var t0 = today(), n = 0;
+    data.lists.forEach(function (l, i) {
+      db.lists[l.id] = mkList(Object.assign({ order: i }, l));
+    });
+    data.tasks.forEach(function (t, i) {
+      var rec = mkTask(Object.assign({ order: i }, t));
+      // звички («щодня») переносимо на сьогодні, а не у прострочені
+      if (rec.repeat !== 'none' && rec.due && rec.due < t0 && !rec.done) rec.due = t0;
+      db.tasks[rec.id] = rec;
+      if (!rec.parentId && !rec.done) n++;
+    });
+    commit();
+    toast('Перенесено: ' + n + ' ' + plural(n) + ' і ' + data.lists.length + ' ' + (data.lists.length === 1 ? 'список' : data.lists.length < 5 ? 'списки' : 'списків'));
+  }
+
+  /* ============================================================
+     Дії
+     ============================================================ */
+
+  var toastTimer;
+  function toast(msg, undo) {
+    clearTimeout(toastTimer);
+    var slot = $('toast-slot');
+    slot.replaceChildren(h('div', { class: 'toast', role: 'status' },
+      h('span', {}, msg),
+      undo ? h('button', { type: 'button', onclick: function () { undo(); slot.replaceChildren(); } }, 'Скасувати') : null));
+    toastTimer = setTimeout(function () { slot.replaceChildren(); }, 5000);
+  }
+
+  function toggleDone(t) {
+    if (!t.done && t.repeat !== 'none') {
+      var prevDue = t.due;
+      var copy = mkTask(Object.assign({}, t, { id: uid(), repeat: 'none', done: true, doneAt: today() }));
+      db.tasks[copy.id] = copy;
+      t.due = nextDue(t.due, t.repeat);
+      commit();
+      toast('Виконано. Наступне: ' + dueLabel(t.due).toLowerCase(), function () {
+        t.due = prevDue; delete db.tasks[copy.id]; commit();
+      });
+      return;
+    }
+    t.done = !t.done;
+    t.doneAt = t.done ? today() : '';
+    if (t.done) childrenOf(t.id).forEach(function (c) { c.done = true; c.doneAt = today(); });
+    commit();
+    if (t.done) toast('Завдання виконано', function () { t.done = false; t.doneAt = ''; commit(); });
+  }
+
+  function addTask(listId, title, extra) {
+    extra = extra || {};
+    var min = 0;
+    tasks().forEach(function (x) { if (x.order < min) min = x.order; });
+    var t = mkTask(Object.assign({ id: uid(), listId: listId, title: title.trim(), order: min - 1, starred: ui.view === 'starred' }, extra));
+    if (ui.view === 'today' && !('due' in extra)) t.due = today();
+    db.tasks[t.id] = t;
+    commit();
+    return t;
+  }
+
+  function removeTask(t) {
+    var gone = [t].concat(childrenOf(t.id));
+    gone.forEach(function (x) { delete db.tasks[x.id]; });
+    commit();
+    toast('Завдання видалено', function () { gone.forEach(function (x) { db.tasks[x.id] = x; }); commit(); });
+  }
+
+  function sorted(arr, mode) {
+    return arr.slice().sort(mode === 'date'
+      ? function (a, b) { return (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order; }
+      : mode === 'starred' ? function (a, b) { return (b.starred - a.starred) || a.order - b.order; }
+      : function (a, b) { return a.order - b.order; });
+  }
+
+  var dragId = null;
+  function clearDrop() {
+    document.querySelectorAll('.drop-before,.drop-after,.drop-col').forEach(function (el) {
+      el.classList.remove('drop-before', 'drop-after', 'drop-col');
+    });
+  }
+  function moveTask(id, listId, refId, after) {
+    var t = db.tasks[id];
+    if (!t || id === refId) return;
+    var from = t.listId;
+    var arr = sorted(tasks().filter(function (x) { return x.listId === listId && !x.parentId && !x.done && x !== t; }), 'mine');
+    var idx = refId ? arr.findIndex(function (x) { return x.id === refId; }) + (after ? 1 : 0) : arr.length;
+    arr.splice(idx, 0, t);
+    arr.forEach(function (x, i) { x.order = i; });
+    t.listId = listId;
+    childrenOf(t.id).forEach(function (c) { c.listId = listId; });
+    if ((ui.sort[listId] || 'mine') !== 'mine') { ui.sort[listId] = 'mine'; saveUi(); }
+    commit();
+    if (from !== listId) {
+      toast('Перенесено в «' + listOf(listId).name + '»', function () {
+        t.listId = from;
+        childrenOf(t.id).forEach(function (c) { c.listId = from; });
+        commit();
+      });
+    }
+  }
+
+  /* ============================================================
+     Малювання
+     ============================================================ */
+
+  var addingIn = null, openMenu = null, drawerTask = null, armed = null, renameList = null;
+  /* Набране в полі не має зникати, коли обмін у фоні перемальовує екран */
+  var addDraft = '', renameDraft = null;
+  var renderLater = false;   // прийшли зміни, поки людина тягне завдання, — малюємо після
+  var mobileMq = matchMedia('(max-width: 760px)');
+  var reduceMq = matchMedia('(prefers-reduced-motion: reduce)');
+  var hoverMq = matchMedia('(hover: none)');
+  var standaloneMq = matchMedia('(display-mode: standalone)');
+  var installEvt = null;
+
+  function render() {
+    var root = document.documentElement;
+    root.style.setProperty('--fs', ui.size + 'px');
+    if (ui.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', ui.theme);
+    renderSide(); renderHead(); renderBoard(); renderDrawer();
+  }
+
+  function renderSide() {
+    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var t0 = today();
+    var views = [
+      ['board', 'Усі списки', I.list, open.length],
+      ['today', 'Сьогодні', I.sun, open.filter(function (t) { return t.due && t.due <= t0; }).length],
+      ['starred', 'Із зірочкою', I.star, open.filter(function (t) { return t.starred; }).length]
+    ];
+    $('views').replaceChildren.apply($('views'), views.map(function (v) {
+      return h('button', { type: 'button', class: 'nav-item', 'aria-current': String(ui.view === v[0]),
+        onclick: function () { ui.view = v[0]; saveUi(); closeNav(); render(); } },
+        svg(v[2], 20), v[1], h('span', { class: 'count' }, v[3] || ''));
+    }));
+    $('lists').replaceChildren.apply($('lists'), lists().map(function (l) {
+      return h('button', { type: 'button', class: 'list-row', style: '--c:' + l.color, 'aria-pressed': String(l.visible),
+        title: l.visible ? 'Сховати з дошки' : 'Показати на дошці',
+        onclick: function () { l.visible = !l.visible; if (ui.view !== 'board') { ui.view = 'board'; saveUi(); } commit(); } },
+        h('span', { class: 'dot' }), h('span', { class: 'name' }, l.name), h('span', { class: 'count' }, openCount(l.id) || ''));
+    }));
+    $('themes').replaceChildren.apply($('themes'), [['auto', 'Авто'], ['dark', 'Темна'], ['light', 'Світла']].map(function (x) {
+      return h('button', { type: 'button', 'aria-pressed': String(ui.theme === x[0]), onclick: function () { ui.theme = x[0]; saveUi(); render(); } }, x[1]);
+    }));
+    $('sizes').replaceChildren.apply($('sizes'), SIZES.map(function (x) {
+      return h('button', { type: 'button', 'aria-pressed': String(ui.size === x[1]), 'aria-label': 'Розмір тексту ' + x[0],
+        onclick: function () { ui.size = x[1]; saveUi(); render(); } }, x[0]);
+    }));
+  }
+
+  function renderHead() {
+    var t0 = today();
+    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var now = open.filter(function (t) { return t.due === t0; }).length;
+    var late = open.filter(function (t) { return t.due && t.due < t0; }).length;
+    var doneToday = tasks().filter(function (t) { return t.done && t.doneAt === t0 && !t.parentId; }).length;
+    var total = doneToday + now + late;
+    var date = new Date().toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' });
+    date = date.charAt(0).toUpperCase() + date.slice(1);
+    var canInstall = installEvt && !standaloneMq.matches;
+    $('head').replaceChildren(
+      h('div', { class: 'head-date' }, date),
+      h('div', { class: 'head-sum' },
+        total ? [
+          h('span', {}, 'Сьогодні ', h('b', {}, doneToday + ' з ' + total), ' виконано'),
+          h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(doneToday) },
+            h('i', { style: 'width:' + Math.round(doneToday / total * 100) + '%' })),
+          late ? h('span', { class: 'late' }, late + ' простроч.') : null
+        ] : h('span', {}, ready ? 'На сьогодні нічого не заплановано' : ''),
+        canInstall ? h('button', { type: 'button', class: 'btn primary', onclick: install }, 'Встановити застосунок') : null));
+  }
+
+  function chipsFor(t, showList) {
+    var out = [];
+    if (t.due) {
+      var late = !t.done && t.due < today(), now = t.due === today();
+      out.push(h('span', { class: 'chip' + (late ? ' late' : now ? ' today' : '') }, svg(I.clock, 14), dueLabel(t.due), t.repeat !== 'none' ? svg(I.repeat, 14) : null));
+    } else if (t.repeat !== 'none') {
+      out.push(h('span', { class: 'chip' }, svg(I.repeat, 14), REPEATS[t.repeat]));
+    }
+    var subs = childrenOf(t.id);
+    if (subs.length && !t.parentId && !t.done && showList) {
+      out.push(h('span', { class: 'chip' }, svg(I.sub, 14), subs.filter(function (s) { return s.done; }).length + '/' + subs.length));
+    }
+    if (showList) {
+      var l = listOf(t.listId);
+      if (l) out.push(h('span', { class: 'chip list', style: '--c:' + l.color }, l.name));
+    }
+    return out.length ? h('div', { class: 'chips' }, out) : null;
+  }
+
+  function taskRow(t, opts) {
+    opts = opts || {};
+    var drag = !!opts.drag;
+    var row = h('div', {
+      class: 'task' + (t.done ? ' done' : '') + (opts.sub ? ' sub' : ''),
+      draggable: drag ? 'true' : null,
+      ondragstart: drag ? function (e) {
+        dragId = t.id;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', t.id);
+        requestAnimationFrame(function () { row.classList.add('dragging'); });
+      } : null,
+      ondragend: drag ? function () {
+        dragId = null; clearDrop(); row.classList.remove('dragging');
+        if (renderLater) { renderLater = false; render(); }
+      } : null,
+      ondragover: drag ? function (e) {
+        if (!dragId) return;
+        e.preventDefault(); e.stopPropagation(); clearDrop();
+        var r = row.getBoundingClientRect();
+        row.classList.add(e.clientY > r.top + r.height / 2 ? 'drop-after' : 'drop-before');
+      } : null,
+      ondrop: drag ? function (e) {
+        if (!dragId) return;
+        e.preventDefault(); e.stopPropagation();
+        var after = row.classList.contains('drop-after');
+        clearDrop();
+        moveTask(dragId, t.listId, t.id, after);
+      } : null
+    },
+      h('button', { type: 'button', class: 'check', 'aria-label': t.done ? 'Позначити невиконаним' : 'Позначити виконаним', onclick: function () {
+        if (t.done || reduceMq.matches) return toggleDone(t);
+        if (row.classList.contains('completing')) return;
+        row.classList.add('completing');
+        setTimeout(function () { toggleDone(t); }, 420);
+      } }),
+      h('button', { type: 'button', class: 'task-body', onclick: function () { drawerTask = t.id; render(); } },
+        h('span', { class: 'task-title' }, t.title || 'Без назви'),
+        t.notes && !t.done ? h('span', { class: 'task-notes' }, t.notes) : null,
+        chipsFor(t, !!opts.showList)),
+      opts.sub || t.done ? null : h('button', { type: 'button', class: 'star' + (t.starred ? ' on' : ''), 'aria-label': t.starred ? 'Прибрати зірочку' : 'Додати зірочку',
+        onclick: function () { t.starred = !t.starred; commit(); } }, svg(I.star, 19, 1.8)));
+    return row;
+  }
+
+  function addBlock(listId, extra) {
+    var key = listId + (extra ? ':x' : '');
+    if (addingIn === key) {
+      var input = h('input', { id: 'add-' + listId, placeholder: 'Назва завдання', autocomplete: 'off', 'aria-label': 'Назва завдання',
+        oninput: function () { addDraft = input.value; },
+        onkeydown: function (e) {
+          if (e.key === 'Enter' && input.value.trim()) {
+            var title = input.value;
+            addDraft = '';
+            addTask(listId, title, extra);
+            requestAnimationFrame(function () { var i = $('add-' + listId); if (i) i.focus(); });
+          }
+          if (e.key === 'Escape') { addingIn = null; addDraft = ''; render(); }
+        },
+        onblur: function () {
+          setTimeout(function () {
+            if (addingIn === key && (!document.activeElement || document.activeElement.id !== 'add-' + listId)) {
+              addingIn = null;
+              if (!addDraft.trim()) addDraft = '';
+              render();
+            }
+          }, 120);
+        } });
+      input.value = addDraft;
+      requestAnimationFrame(function () { if (document.activeElement !== input) input.focus(); });
+      return h('div', { class: 'add-input' }, svg(I.addTask, 22, 1.8), input);
+    }
+    return h('button', { type: 'button', class: 'add-row', onclick: function () { addingIn = key; addDraft = ''; render(); } }, svg(I.addTask, 22, 1.8), 'Додати завдання');
+  }
+
+  var DONE_SHOWN = 30;   // виконаних показуємо стільки, решта — за кнопкою: повтори щодня за рік — сотні рядків
+  var doneLimit = {};
+
+  function column(l) {
+    var mode = ui.sort[l.id] || 'mine';
+    var canDrag = !mobileMq.matches && !hoverMq.matches;
+    var top = sorted(tasks().filter(function (t) { return t.listId === l.id && !t.parentId && !t.done; }), mode);
+    var done = tasks().filter(function (t) {
+      if (t.listId !== l.id || !t.done) return false;
+      var p = t.parentId && db.tasks[t.parentId];
+      return !p || !p.done;
+    }).sort(function (a, b) { return (b.doneAt || '').localeCompare(a.doneAt || '') || b.order - a.order; });
+    var rows = [];
+    top.forEach(function (t) {
+      rows.push(taskRow(t, { drag: canDrag }));
+      sorted(childrenOf(t.id).filter(function (s) { return !s.done; }), 'mine').forEach(function (s) { rows.push(taskRow(s, { sub: true })); });
+    });
+    var isOpen = !!ui.openDone[l.id];
+    var limit = doneLimit[l.id] || DONE_SHOWN;
+    var col = h('section', { class: 'col', style: '--c:' + l.color, 'aria-label': l.name,
+      ondragover: function (e) { if (!dragId) return; e.preventDefault(); clearDrop(); col.classList.add('drop-col'); },
+      ondragleave: function (e) { if (!col.contains(e.relatedTarget)) col.classList.remove('drop-col'); },
+      ondrop: function (e) { if (!dragId) return; e.preventDefault(); clearDrop(); moveTask(dragId, l.id, null, true); } },
+      h('div', { class: 'col-head' },
+        h('div', { class: 'col-title' }, h('i', { class: 'col-dot' }), h('span', {}, l.name),
+          top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null),
+        columnMenu(l, mode)),
+      addBlock(l.id),
+      rows.length ? rows : h('div', { class: 'empty' }, done.length ? 'Усе виконано. Можна видихнути.' : 'Поки порожньо. Додайте перше завдання.'),
+      done.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(isOpen),
+        onclick: function () { ui.openDone[l.id] = !isOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Виконані (' + done.length + ')') : null,
+      isOpen ? done.slice(0, limit).map(function (t) { return taskRow(t); }) : null,
+      isOpen && done.length > limit ? h('button', { type: 'button', class: 'more', onclick: function () { doneLimit[l.id] = limit + 100; render(); } },
+        'Показати ще ' + Math.min(100, done.length - limit)) : null);
+    return col;
+  }
+
+  function columnMenu(l, mode) {
+    var open = openMenu === l.id;
+    var wrap = h('div', { class: 'menu-wrap' },
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Дії зі списком', 'aria-expanded': String(open),
+        onclick: function (e) { e.stopPropagation(); openMenu = open ? null : l.id; armed = null; render(); } }, svg(I.dots, 20)));
+    if (!open) return wrap;
+    var doneList = tasks().filter(function (t) { return t.listId === l.id && t.done; });
+    var loud = tasks().filter(function (t) { return t.listId === l.id && isShouting(t.title); });
+    wrap.append(h('div', { class: 'menu', onclick: function (e) { e.stopPropagation(); } },
+      h('div', { class: 'menu-label' }, 'Сортування'),
+      [['mine', 'Мій порядок'], ['date', 'За датою'], ['starred', 'Спершу із зірочкою']].map(function (x) {
+        return h('button', { type: 'button', onclick: function () { ui.sort[l.id] = x[0]; openMenu = null; saveUi(); render(); } },
+          (mode === x[0] ? '✓ ' : ' ') + x[1]);
+      }),
+      h('hr'),
+      h('div', { class: 'menu-label' }, 'Колір'),
+      h('div', { class: 'swatches' }, COLORS.map(function (c) {
+        return h('button', { type: 'button', style: '--c:' + c, 'aria-label': 'Колір списку', 'aria-pressed': String(l.color === c),
+          onclick: function () { l.color = c; commit(); } });
+      })),
+      h('hr'),
+      h('button', { type: 'button', onclick: function () { openMenu = null; renameList = l.id; render(); } }, 'Перейменувати'),
+      loud.length ? h('button', { type: 'button', onclick: function () {
+        var was = loud.map(function (t) { return [t, t.title]; });
+        loud.forEach(function (t) { t.title = calm(t.title); });
+        openMenu = null; commit();
+        toast('Прибрано капс у ' + was.length + ' ' + plural(was.length), function () { was.forEach(function (x) { x[0].title = x[1]; }); commit(); });
+      } }, 'Прибрати капс у назвах') : null,
+      doneList.length ? h('button', { type: 'button', onclick: function () {
+        doneList.forEach(function (t) { delete db.tasks[t.id]; });
+        openMenu = null; commit();
+        toast('Видалено виконаних: ' + doneList.length, function () { doneList.forEach(function (t) { db.tasks[t.id] = t; }); commit(); });
+      } }, 'Очистити виконані') : null,
+      Object.keys(db.lists).length > 1 ? h('button', { type: 'button', class: 'danger', onclick: function () {
+        if (armed !== l.id) { armed = l.id; render(); return; }
+        var gone = tasks().filter(function (t) { return t.listId === l.id; });
+        delete db.lists[l.id];
+        gone.forEach(function (t) { delete db.tasks[t.id]; });
+        openMenu = null; armed = null; commit();
+        toast('Список «' + l.name + '» видалено', function () {
+          db.lists[l.id] = l;
+          gone.forEach(function (t) { db.tasks[t.id] = t; });
+          commit();
+        });
+      } }, armed === l.id ? 'Натисніть ще раз, щоб видалити' : 'Видалити список') : null));
+    return wrap;
+  }
+
+  function renameCol(l) {
+    var fresh = renameDraft === null;
+    var input = h('input', { id: 'rename-input', 'aria-label': 'Нова назва списку',
+      oninput: function () { renameDraft = input.value; },
+      onkeydown: function (e) { if (e.key === 'Enter') done(); if (e.key === 'Escape') { renameList = null; renameDraft = null; render(); } },
+      onblur: function () { setTimeout(function () { if (!document.activeElement || document.activeElement.id !== 'rename-input') done(); }, 120); } });
+    input.value = fresh ? l.name : renameDraft;
+    renameDraft = input.value;
+    function done() {
+      if (renameList !== l.id) return;
+      renameList = null;
+      if (input.value.trim()) l.name = input.value.trim();
+      renameDraft = null;
+      commit();
+    }
+    requestAnimationFrame(function () {
+      if (document.activeElement === input) return;
+      input.focus();
+      if (fresh) input.select();
+    });
+    return h('section', { class: 'col', style: '--c:' + l.color }, h('div', { class: 'add-input' }, input));
+  }
+
+  function renderBoard() {
+    var b = $('board');
+    if (!ready) {
+      b.replaceChildren(h('section', { class: 'flat' }, h('h2', {}, lastProblem ? 'Поки без справ' : 'Завантажую ваші справи…'),
+        h('div', { class: 'empty' }, lastProblem || 'Перший раз на цьому пристрої: беремо їх із сервера.')));
+      return;
+    }
+    if (ui.view === 'board') {
+      var vis = lists().filter(function (l) { return l.visible; });
+      if (!vis.length) {
+        b.replaceChildren(h('section', { class: 'flat' }, h('h2', {}, Object.keys(db.lists).length ? 'Усі списки приховано' : 'Списків ще немає'),
+          h('div', { class: 'empty' }, Object.keys(db.lists).length ? 'Увімкніть потрібні списки в меню ліворуч.' : 'Створіть перший у меню ліворуч: поле «Новий список».')));
+        return;
+      }
+      if (mobileMq.matches) {
+        var cur = vis.filter(function (l) { return l.id === ui.mList; })[0] || vis[0];
+        b.replaceChildren(
+          vis.length > 1 ? h('div', { class: 'tabs', role: 'tablist' }, vis.map(function (l) {
+            var n = openCount(l.id);
+            return h('button', { type: 'button', class: 'tab', role: 'tab', style: '--c:' + l.color, 'aria-selected': String(l === cur),
+              onclick: function () { ui.mList = l.id; saveUi(); render(); } }, h('i', { class: 'col-dot' }), l.name, n ? h('small', {}, n) : null);
+          })) : '',
+          renameList === cur.id ? renameCol(cur) : column(cur));
+        return;
+      }
+      b.replaceChildren.apply(b, vis.map(function (l) { return renameList === l.id ? renameCol(l) : column(l); }));
+      return;
+    }
+    var t0 = today();
+    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var groups;
+    if (ui.view === 'today') {
+      var items = open.filter(function (t) { return t.due && t.due <= t0; });
+      groups = [['Прострочені', sorted(items.filter(function (t) { return t.due < t0; }), 'date')],
+                ['Сьогодні', sorted(items.filter(function (t) { return t.due === t0; }), 'mine')]];
+    } else {
+      groups = [['', sorted(open.filter(function (t) { return t.starred; }), 'date')]];
+    }
+    var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
+    var total = groups.reduce(function (n, g) { return n + g[1].length; }, 0);
+    b.replaceChildren(h('section', { class: 'flat' },
+      h('h2', {}, ui.view === 'today' ? 'Сьогодні' : 'Із зірочкою'),
+      first ? addBlock(first.id, ui.view === 'today' ? { due: t0 } : { starred: true }) : null,
+      total ? groups.filter(function (g) { return g[1].length; }).map(function (g) {
+        return [g[0] ? h('div', { class: 'group-label' }, g[0]) : null, g[1].map(function (t) { return taskRow(t, { showList: true }); })];
+      }) : h('div', { class: 'empty' }, ui.view === 'today' ? 'На сьогодні нічого не заплановано.' : 'Позначте важливі завдання зірочкою, і вони з\'являться тут.')));
+  }
+
+  /* ---------- картка завдання ---------- */
+
+  var drawerStamp = '';
+  function stampOf(t) { return t.id + ':' + JSON.stringify(t) + childrenOf(t.id).map(function (c) { return c.title + c.done; }).join(); }
+
+  function renderDrawer() {
+    var layer = $('layer');
+    var t = drawerTask && db.tasks[drawerTask];
+    if (!t) { drawerTask = null; drawerStamp = ''; if (layer.firstChild) layer.replaceChildren(); return; }
+    if (drawerStamp === stampOf(t)) return;
+    var active = document.activeElement;
+    var focusId = active && active.id, selStart = active && active.selectionStart;
+    drawerStamp = stampOf(t);
+
+    function close() {
+      drawerTask = null; drawerStamp = '';
+      // порожнє, щойно створене кнопкою «Нове завдання», не лишаємо
+      if (!t.title.trim() && !t.notes.trim()) {
+        childrenOf(t.id).forEach(function (c) { delete db.tasks[c.id]; });
+        delete db.tasks[t.id];
+        commit();
+      } else render();
+    }
+    function set(k, v) { t[k] = v; commit(); }
+    function typed(k, v) { t[k] = v; quiet = true; commit(); quiet = false; drawerStamp = stampOf(t); }
+
+    var parent = t.parentId && db.tasks[t.parentId];
+    var delBtn = h('button', { type: 'button', class: 'btn danger', onclick: function () {
+      if (!delBtn.classList.contains('armed')) { delBtn.classList.add('armed'); delBtn.textContent = 'Точно видалити?'; return; }
+      drawerTask = null; removeTask(t);
+    } }, 'Видалити');
+    var subInput = h('input', { id: 'd-sub', placeholder: 'Додати підзавдання', autocomplete: 'off', onkeydown: function (e) {
+      if (e.key === 'Enter' && subInput.value.trim()) {
+        var max = 0;
+        childrenOf(t.id).forEach(function (c) { if (c.order > max) max = c.order; });
+        addTask(t.listId, subInput.value, { parentId: t.id, order: max + 1, starred: false, due: '' });
+      }
+    } });
+    var title = h('textarea', { id: 'd-title', class: 'title-input', rows: '2', 'aria-label': 'Назва', placeholder: 'Що треба зробити?' });
+    title.value = t.title;
+    title.addEventListener('input', function () { typed('title', title.value.replace(/\n/g, ' ')); });
+    var notes = h('textarea', { id: 'd-notes', placeholder: 'Деталі, посилання, кроки' });
+    notes.value = t.notes;
+    notes.addEventListener('input', function () { typed('notes', notes.value); });
+    var due = h('input', { id: 'd-due', type: 'date', value: t.due || '', onchange: function (e) { set('due', e.target.value); } });
+    var rep = h('select', { id: 'd-rep', onchange: function (e) { t.repeat = e.target.value; if (t.repeat !== 'none' && !t.due) t.due = today(); commit(); } },
+      Object.keys(REPEATS).map(function (k) { return h('option', { value: k, selected: t.repeat === k }, REPEATS[k]); }));
+    var list = h('select', { id: 'd-list', onchange: function (e) {
+      t.listId = e.target.value;
+      childrenOf(t.id).forEach(function (c) { c.listId = t.listId; });
+      commit();
+    } }, lists().map(function (l) { return h('option', { value: l.id, selected: t.listId === l.id }, l.name); }));
+    var t0 = today();
+
+    layer.replaceChildren(
+      h('div', { class: 'scrim', onclick: close }),
+      h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Деталі завдання', onkeydown: function (e) { if (e.key === 'Escape') close(); } },
+        h('div', { class: 'drawer-head' },
+          h('span', { class: 'crumb' }, parent ? 'Підзавдання: ' + parent.title : ((listOf(t.listId) || {}).name || '')),
+          t.done ? null : h('button', { type: 'button', class: 'icon-btn star' + (t.starred ? ' on' : ''), 'aria-label': 'Зірочка',
+            onclick: function () { set('starred', !t.starred); } }, svg(I.star, 20, 1.8)),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: close }, svg(I.close, 20))),
+        title,
+        isShouting(t.title) ? h('button', { type: 'button', class: 'decaps', onclick: function () { set('title', calm(t.title)); } }, 'Аа  Прибрати капс') : null,
+        h('div', { class: 'field' }, h('label', { for: 'd-notes' }, 'Нотатки'), notes),
+        h('div', { class: 'row2' },
+          h('div', { class: 'field' }, h('label', { for: 'd-due' }, 'Дата'), due),
+          h('div', { class: 'field' }, h('label', { for: 'd-rep' }, 'Повтор'), rep)),
+        h('div', { class: 'quick' }, [['Сьогодні', t0], ['Завтра', addDays(t0, 1)], ['Через тиждень', addDays(t0, 7)], ['Без дати', '']].map(function (x) {
+          return h('button', { type: 'button', onclick: function () { set('due', x[1]); } }, x[0]);
+        })),
+        parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-list' }, 'Список'), list),
+        parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-sub' }, 'Підзавдання'),
+          sorted(childrenOf(t.id), 'mine').map(function (c) { return taskRow(c); }), subInput),
+        h('div', { class: 'drawer-foot' },
+          delBtn,
+          h('div', {},
+            h('button', { type: 'button', class: 'btn', onclick: function () { toggleDone(t); } }, t.done ? 'Повернути' : 'Виконано'),
+            h('button', { type: 'button', class: 'btn primary', onclick: close }, 'Готово')))));
+
+    var f = focusId && $(focusId);
+    if (f) {
+      f.focus();
+      try { if (selStart != null) f.setSelectionRange(selStart, selStart); } catch (e) { /* не текстове поле */ }
+    } else if (!t.title) title.focus();
+  }
+
+  /* ============================================================
+     Вхід на екрані
+     ============================================================ */
+
+  function showLogin(msg) {
+    $('app').hidden = true;
+    $('login').hidden = false;
+    $('lgEmail').value = $('lgEmail').value || lsGet(OWNER_KEY) || '';
+    var err = $('lgErr');
+    err.hidden = !msg;
+    err.textContent = msg || '';
+    setTimeout(function () { ($('lgEmail').value ? $('lgPass') : $('lgEmail')).focus(); }, 0);
+  }
+
+  function showApp() {
+    $('login').hidden = true;
+    $('app').hidden = false;
+    render();
+  }
+
+  /** Копія в браузері належить конкретному входу: увійшли іншим акаунтом — починаємо з чистого. */
+  function claimLocal() {
+    var s = sess();
+    var email = s && s.email ? String(s.email).toLowerCase() : '';
+    var owner = lsGet(OWNER_KEY);
+    if (email && owner && owner !== email) forgetLocal();
+    if (email) lsSet(OWNER_KEY, email);
+  }
+
+  $('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = $('lgEmail').value.trim(), pass = $('lgPass').value;
+    if (!email || !pass) { showLogin('Введіть пошту й пароль'); return; }
+    var btn = $('lgBtn');
+    btn.disabled = true; btn.textContent = 'Вхід…';
+    signIn(email, pass).then(function () {
+      $('lgPass').value = '';
+      claimLocal();
+      showApp();
+      return sync();
+    }).catch(function (err) {
+      showLogin(err && err.name === 'TypeError' ? 'Немає зв\'язку з сервером. Перевірте інтернет' : err.message);
+    }).then(function () {
+      btn.disabled = false; btn.textContent = 'Увійти';
+    });
+  });
+
+  /* ============================================================
+     Застосунок на екрані
+     ============================================================ */
+
+  function install() {
+    if (!installEvt) return;
+    var evt = installEvt;
+    evt.prompt();
+    evt.userChoice.then(function (c) {
+      installEvt = null;
+      renderHead();
+      if (c && c.outcome === 'accepted') toast('Готово: «Справи» тепер серед застосунків');
+    });
+  }
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();      // замість дрібної смужки браузера — помітна кнопка в шапці
+    installEvt = e;
+    renderHead();
+  });
+  window.addEventListener('appinstalled', function () { installEvt = null; renderHead(); });
+
+  function closeNav() { $('app').classList.remove('nav-open'); }
+
+  $('menuBtn').addEventListener('click', function (e) { e.stopPropagation(); $('app').classList.toggle('nav-open'); });
+  document.addEventListener('click', function (e) {
+    if (openMenu) { openMenu = null; armed = null; render(); }
+    if ($('app').classList.contains('nav-open') && !$('side').contains(e.target)) closeNav();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && openMenu) { openMenu = null; render(); }
+    var tag = (document.activeElement && document.activeElement.tagName) || '';
+    if ((e.key === 'n' || e.key === 'т') && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|TEXTAREA|SELECT/.test(tag) && !drawerTask && !$('app').hidden) {
+      e.preventDefault();
+      $('create').click();
+    }
+  });
+  $('create').addEventListener('click', function () {
+    var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
+    if (!l) { toast('Спершу створіть список у меню ліворуч'); return; }
+    var t = addTask(l.id, '', ui.view === 'today' ? { due: today() } : {});
+    drawerTask = t.id;
+    closeNav();
+    render();
+  });
+  $('newListForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = $('newListName').value.trim();
+    if (!name) return;
+    var max = -1;
+    lists().forEach(function (l) { if (l.order > max) max = l.order; });
+    var l = mkList({ id: uid(), name: name, color: COLORS[Object.keys(db.lists).length % COLORS.length], visible: true, order: max + 1 });
+    db.lists[l.id] = l;
+    $('newListName').value = '';
+    ui.view = 'board';
+    ui.mList = l.id;
+    saveUi();
+    commit();
+  });
+
+  mobileMq.addEventListener('change', function () { render(); });
+
+  /* Обмін: одразу, коли повертаємось до застосунку, коли з'являється
+     інтернет, і раз на 20 секунд, поки він відкритий. Ховаючись — віддаємо
+     все, що лишилося в черзі, щоб на іншому пристрої воно вже було. */
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { if (Object.keys(outbox).length) sync(); return; }
+    render();       // могла змінитися дата — «сьогодні», прострочені
+    sync();
+  });
+  window.addEventListener('online', function () { sync(); });
+  setInterval(function () { if (!document.hidden && signedIn()) sync(); }, PULL_MS);
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(function (e) { console.warn('SW не зареєструвався:', e); });
+    });
+  }
+
+  /* ============================================================
+     Старт
+     ============================================================ */
+
+  loadLocal();
+  takeImportFromUrl().then(function () {
+    if (!BASE) { setSync('error', 'Не налаштовано адресу бази'); }
+    if (!signedIn()) { showLogin(''); return; }
+    claimLocal();
+    showApp();
+    sync();
+  });
+})();
