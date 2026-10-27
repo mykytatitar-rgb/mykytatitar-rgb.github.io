@@ -51,6 +51,7 @@ self.addEventListener('fetch', function (e) {
   // Інші підпроєкти на цьому домені (напр. /mathhub/ — додаток Hola) мають
   // власні сторінки й service worker: не підміняємо їх оболонкою «Справ».
   if (url.pathname.indexOf('/mathhub/') === 0) return;
+  if (/^\/invest(\/|$)/.test(url.pathname)) return;  // «Портфель» (/invest/)
 
   var page = req.mode === 'navigate';
   e.respondWith(fresh(page ? new Request('./', { cache: 'no-cache' }) : req, page));

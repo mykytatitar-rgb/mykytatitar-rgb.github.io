@@ -1,0 +1,68 @@
+# «Портфель»: щоденне оновлення даних.
+# Бере звіт Flex з Interactive Brokers, додає ціни VOO і курс НБУ, шифрує паролем
+# і кладе один файл data.enc.json у гілку invest-data. Застосунок читає його звідти.
+#
+# Секрети: Settings → Secrets and variables → Actions → New repository secret
+#   IBKR_FLEX_TOKEN     токен Flex Web Service з IBKR
+#   IBKR_FLEX_QUERY_ID  номер звіту Flex (Query ID)
+#   INVEST_PASSWORD     пароль, яким шифруються дані; його ж вводиш у застосунку
+# Поки секретів немає, запуск просто пропускається. Покроково: invest/README.md.
+
+name: Портфель, оновити дані
+
+on:
+  schedule:
+    - cron: '17 5 * * 2-6'    # вт–сб, 07:17 / 08:17 за Києвом: звіт за вчорашнє закриття біржі
+    - cron: '47 10 * * 2-6'   # другий запуск, якщо зранку IBKR ще не був готовий
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: invest-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Код застосунку
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git clone -q --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" src
+
+      - name: Попередні дані
+        run: |
+          if git -C src fetch -q --depth 1 origin invest-data 2>/dev/null; then
+            git -C src show FETCH_HEAD:data.enc.json > prev.enc.json
+          else
+            echo "Попередніх даних ще немає"
+          fi
+
+      - name: Python
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q --disable-pip-version-check "cryptography>=42"
+
+      - name: Звіт IBKR і шифрування
+        env:
+          IBKR_FLEX_TOKEN: ${{ secrets.IBKR_FLEX_TOKEN }}
+          IBKR_FLEX_QUERY_ID: ${{ secrets.IBKR_FLEX_QUERY_ID }}
+          INVEST_PASSWORD: ${{ secrets.INVEST_PASSWORD }}
+        run: '"$RUNNER_TEMP/venv/bin/python" src/invest/tools/update_data.py --prev prev.enc.json --out out/data.enc.json'
+
+      - name: Публікація в гілку invest-data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f out/data.enc.json ]; then echo "Нових даних немає, публікувати нічого"; exit 0; fi
+          cd out
+          git init -q -b invest-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.enc.json
+          git commit -q -m "Дані портфеля $(date -u +%Y-%m-%d)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" invest-data
+          echo "Опубліковано"

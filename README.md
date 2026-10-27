@@ -18,3 +18,8 @@
 - Іконки: `node make-icons.js` (числа ті самі, що в `icon.svg`).
 - Перенесення списку ззовні — посиланням `#import=z.<дані>`: дані після «#»
   на сервер не йдуть.
+
+## Інші застосунки на сайті
+
+- **Портфель** (`/invest/`): рахунок в Interactive Brokers, див. [invest/README.md](invest/README.md).
+  Service worker «Справ» адрес `/invest/` не чіпає: у «Портфеля» свій.
