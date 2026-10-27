@@ -5,7 +5,7 @@
    мережі немає чи вона надто повільна. Тож нова версія приходить з першим
    же відкриттям, і нічого піднімати руками не треба. */
 
-var CACHE = 'spravy-v1';
+var CACHE = 'spravy-v2';
 
 var SHELL = [
   './',
@@ -48,6 +48,9 @@ self.addEventListener('fetch', function (e) {
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;   // база, шрифти — повз кеш
+  // Інші підпроєкти на цьому домені (напр. /mathhub/ — додаток Hola) мають
+  // власні сторінки й service worker: не підміняємо їх оболонкою «Справ».
+  if (url.pathname.indexOf('/mathhub/') === 0) return;
 
   var page = req.mode === 'navigate';
   e.respondWith(fresh(page ? new Request('./', { cache: 'no-cache' }) : req, page));
