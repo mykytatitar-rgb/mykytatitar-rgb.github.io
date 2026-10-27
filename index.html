@@ -2,7 +2,8 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- resizes-content: коли відкрита клавіатура, панель додавання стоїть над нею, а не під -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Справи</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -59,15 +60,24 @@
     </div>
   </aside>
   <main class="main">
-    <div class="topbar">
-      <button class="icon-btn" id="menuBtn" type="button" aria-label="Меню"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-      <div class="brand">Справи</div>
+    <!-- Телефон: компактна шапка, що не їде з прокруткою, — дата, поступ дня й вкладки списків -->
+    <div class="topbar" id="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" id="menuBtn" type="button" aria-label="Меню"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <div class="top-title" id="topTitle">Справи</div>
+        <div class="top-prog" id="topProg"></div>
+      </div>
+      <div class="tabs" id="mtabs" role="tablist" hidden></div>
     </div>
     <header class="head" id="head"></header>
     <div class="board" id="board"></div>
   </main>
+  <!-- Телефон: розділи внизу, під великим пальцем, і кнопка нового завдання -->
+  <nav class="bnav" id="bnav" aria-label="Розділи"></nav>
+  <button class="fab" id="fab" type="button" aria-label="Нове завдання"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 </div>
 <div id="layer"></div>
+<div id="sheet"></div>
 <div id="toast-slot"></div>
 
 <script src="config.js"></script>

@@ -497,7 +497,7 @@
       if (changed || !ready) {
         ready = true;
         saveLocal();
-        if (dragId) renderLater = true; else render();
+        if (dragId || gest) renderLater = true; else render();
       }
     });
   }
@@ -592,13 +592,13 @@
      ============================================================ */
 
   var toastTimer;
-  function toast(msg, undo) {
+  function toast(msg, undo, ms) {
     clearTimeout(toastTimer);
     var slot = $('toast-slot');
     slot.replaceChildren(h('div', { class: 'toast', role: 'status' },
       h('span', {}, msg),
       undo ? h('button', { type: 'button', onclick: function () { undo(); slot.replaceChildren(); } }, 'Скасувати') : null));
-    toastTimer = setTimeout(function () { slot.replaceChildren(); }, 5000);
+    toastTimer = setTimeout(function () { slot.replaceChildren(); }, ms || 5000);
   }
 
   function toggleDone(t) {
@@ -690,7 +690,104 @@
     var root = document.documentElement;
     root.style.setProperty('--fs', ui.size + 'px');
     if (ui.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', ui.theme);
-    renderSide(); renderHead(); renderBoard(); renderDrawer();
+    renderSide(); renderHead(); renderTop(); renderNav(); renderBoard(); renderDrawer();
+  }
+
+  /** Список, відкритий на телефоні (вкладка), — або перший видимий. */
+  function currentList() {
+    var vis = lists().filter(function (l) { return l.visible; });
+    return vis.filter(function (l) { return l.id === ui.mList; })[0] || vis[0] || lists()[0] || null;
+  }
+
+  /* ---------- «Назад» ----------
+     Відкрите вікно (картка завдання, панель додавання, меню) — окремий крок
+     в історії. Тоді системна кнопка «Назад» на телефоні закриває його, а не
+     виходить із застосунку. Одне вікно змінює інше в межах того самого
+     кроку: інакше запізнілий «назад» від першого закрив би друге. */
+  var overlay = null;     // 'drawer' | 'sheet' | 'nav'
+  function pushOverlay(kind) {
+    if (overlay) { overlay = kind; return; }
+    overlay = kind;
+    try { history.pushState({ spravy: kind }, ''); } catch (e) { /* без історії — просто без «Назад» */ }
+  }
+  function popOverlay(kind) {
+    if (!overlay || overlay !== kind) return;
+    overlay = null;
+    try { history.back(); } catch (e) {}
+  }
+  window.addEventListener('popstate', function () {
+    var kind = overlay;
+    if (!kind) return;
+    overlay = null;
+    if (kind === 'sheet') closeSheet(true);
+    else if (kind === 'drawer') closeDrawer(true);
+    else if (kind === 'nav') closeNav(true);
+  });
+
+  /* ---------- шапка й нижня панель телефона ---------- */
+
+  function renderTop() {
+    var t0 = today();
+    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var now = open.filter(function (t) { return t.due === t0; }).length;
+    var late = open.filter(function (t) { return t.due && t.due < t0; }).length;
+    var doneToday = tasks().filter(function (t) { return t.done && t.doneAt === t0 && !t.parentId; }).length;
+    var total = doneToday + now + late;
+    var d = new Date().toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' });
+    $('topTitle').textContent = d.charAt(0).toUpperCase() + d.slice(1);
+    var prog = $('topProg');
+    prog.replaceChildren();
+    if (total) {
+      prog.append(
+        h('div', { class: 'bar', role: 'progressbar', 'aria-label': 'Виконано сьогодні', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(doneToday) },
+          h('i', { style: 'width:' + Math.round(doneToday / total * 100) + '%' })),
+        h('span', { title: 'Сьогодні виконано ' + doneToday + ' з ' + total }, doneToday + '/' + total));
+      if (late) prog.append(h('span', { class: 'late', title: 'Прострочених: ' + late }, svg(I.clock, 13), late));
+    }
+
+    var tabs = $('mtabs');
+    var vis = lists().filter(function (l) { return l.visible; });
+    if (!mobileMq.matches || ui.view !== 'board' || !ready || vis.length < 2) { tabs.hidden = true; tabs.replaceChildren(); return; }
+    var cur = currentList();
+    tabs.hidden = false;
+    tabs.replaceChildren.apply(tabs, vis.map(function (l) {
+      var n = openCount(l.id);
+      return h('button', { type: 'button', class: 'tab', role: 'tab', style: '--c:' + l.color, 'aria-selected': String(l === cur),
+        onclick: function () { ui.mList = l.id; saveUi(); window.scrollTo(0, 0); render(); } },
+        h('i', { class: 'col-dot' }), l.name, n ? h('small', {}, n) : null);
+    }));
+    var sel = tabs.querySelector('[aria-selected="true"]');
+    if (sel && tabs.dataset.sel !== cur.id) {
+      tabs.dataset.sel = cur.id;
+      sel.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    }
+  }
+
+  function renderNav() {
+    var t0 = today();
+    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var due = open.filter(function (t) { return t.due && t.due <= t0; });
+    var late = due.some(function (t) { return t.due < t0; });
+    var items = [
+      ['board', 'Списки', I.list, 0],
+      ['today', 'Сьогодні', I.sun, due.length],
+      ['starred', 'Із зірочкою', I.star, open.filter(function (t) { return t.starred; }).length]
+    ];
+    $('bnav').replaceChildren.apply($('bnav'), items.map(function (x) {
+      return h('button', { type: 'button', 'aria-current': String(ui.view === x[0]),
+        onclick: function () { ui.view = x[0]; saveUi(); window.scrollTo(0, 0); render(); } },
+        h('span', { class: 'bn-ico' }, svg(x[2], 22, 1.9)),
+        h('span', {}, x[1]),
+        x[3] ? h('span', { class: 'bn-badge' + (x[0] === 'today' && late ? ' late' : '') }, x[3]) : null);
+    }));
+  }
+
+  /** Телефон: запрошення поставити застосунок на головний екран, поки його там немає. */
+  function installBar() {
+    if (!mobileMq.matches || !installEvt || standaloneMq.matches) return null;
+    return h('div', { class: 'install-bar' },
+      h('span', {}, 'Поставте «Справи» на головний екран: відкриватимуться з іконки, як звичайний застосунок.'),
+      h('button', { type: 'button', class: 'btn primary', onclick: install }, 'Встановити'));
   }
 
   function renderSide() {
@@ -706,11 +803,15 @@
         onclick: function () { ui.view = v[0]; saveUi(); closeNav(); render(); } },
         svg(v[2], 20), v[1], h('span', { class: 'count' }, v[3] || ''));
     }));
+    var cur = mobileMq.matches && ui.view === 'board' ? currentList() : null;
     $('lists').replaceChildren.apply($('lists'), lists().map(function (l) {
-      return h('button', { type: 'button', class: 'list-row', style: '--c:' + l.color, 'aria-pressed': String(l.visible),
-        title: l.visible ? 'Сховати з дошки' : 'Показати на дошці',
-        onclick: function () { l.visible = !l.visible; if (ui.view !== 'board') { ui.view = 'board'; saveUi(); } commit(); } },
-        h('span', { class: 'dot' }), h('span', { class: 'name' }, l.name), h('span', { class: 'count' }, openCount(l.id) || ''));
+      return h('div', { class: 'list-row', style: '--c:' + l.color, 'aria-current': String(l === cur) },
+        h('button', { type: 'button', class: 'dot', role: 'switch', 'aria-checked': String(l.visible),
+          'aria-label': (l.visible ? 'Сховати з дошки «' : 'Показати на дошці «') + l.name + '»',
+          title: l.visible ? 'Сховати з дошки' : 'Показати на дошці',
+          onclick: function () { l.visible = !l.visible; commit(); } }),
+        h('button', { type: 'button', class: 'name', onclick: function () { showList(l); } }, l.name),
+        h('span', { class: 'count' }, openCount(l.id) || ''));
     }));
     $('themes').replaceChildren.apply($('themes'), [['auto', 'Авто'], ['dark', 'Темна'], ['light', 'Світла']].map(function (x) {
       return h('button', { type: 'button', 'aria-pressed': String(ui.theme === x[0]), onclick: function () { ui.theme = x[0]; saveUi(); render(); } }, x[1]);
@@ -762,6 +863,26 @@
     return out.length ? h('div', { class: 'chips' }, out) : null;
   }
 
+  /** Відкрити список: на телефоні — його вкладку, на комп'ютері — прокрутити до колонки. */
+  function showList(l) {
+    var wasHidden = !l.visible;
+    l.visible = true;
+    ui.view = 'board';
+    ui.mList = l.id;
+    saveUi();
+    closeNav();
+    if (wasHidden) commit(); else render();
+    if (mobileMq.matches) { window.scrollTo(0, 0); return; }
+    var col = document.querySelector('.col[data-list="' + l.id + '"]');
+    if (col) col.scrollIntoView({ behavior: reduceMq.matches ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+  }
+
+  function openDrawer(id) {
+    drawerTask = id;
+    pushOverlay('drawer');
+    render();
+  }
+
   function taskRow(t, opts) {
     opts = opts || {};
     var drag = !!opts.drag;
@@ -798,13 +919,140 @@
         row.classList.add('completing');
         setTimeout(function () { toggleDone(t); }, 420);
       } }),
-      h('button', { type: 'button', class: 'task-body', onclick: function () { drawerTask = t.id; render(); } },
+      h('button', { type: 'button', class: 'task-body', onclick: function () { openDrawer(t.id); } },
         h('span', { class: 'task-title' }, t.title || 'Без назви'),
         t.notes && !t.done ? h('span', { class: 'task-notes' }, t.notes) : null,
         chipsFor(t, !!opts.showList)),
       opts.sub || t.done ? null : h('button', { type: 'button', class: 'star' + (t.starred ? ' on' : ''), 'aria-label': t.starred ? 'Прибрати зірочку' : 'Додати зірочку',
         onclick: function () { t.starred = !t.starred; commit(); } }, svg(I.star, 19, 1.8)));
-    return row;
+    if (opts.touch === false || !mobileMq.matches) return row;
+    // телефон: рядок у обгортці, під якою видно, що зробить свайп
+    var wrap = h('div', { class: 'srow', 'data-id': t.id, 'data-top': opts.lift ? '1' : null,
+      'data-ldone': t.done ? 'Повернути' : 'Виконано', 'data-ldel': 'Видалити' }, row);
+    touchable(wrap, row, t, !!opts.lift);
+    return wrap;
+  }
+
+  /* ---------- жести на телефоні ----------
+     Свайп праворуч — виконано (або повернути виконане), ліворуч — видалити;
+     обидва зі «Скасувати». Довге натискання піднімає завдання, і його можна
+     перетягнути вище чи нижче. Звичайна прокрутка пальцем лишається як є:
+     рух угору-вниз до спрацювання жесту віддаємо сторінці. */
+
+  var gest = null;
+  var swallowClick = 0;     // після жесту палець відпускають над кнопкою — це не натискання
+
+  document.addEventListener('click', function (e) {
+    if (Date.now() - swallowClick < 450) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+  document.addEventListener('contextmenu', function (e) { if (gest) e.preventDefault(); }, true);
+
+  function touchable(wrap, row, t, liftable) {
+    wrap.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { cancelGesture(); return; }
+      var p = e.touches[0];
+      gest = { wrap: wrap, row: row, t: t, x0: p.clientX, y0: p.clientY, cy: p.clientY, dx: 0, dy: 0, mode: 'wait', sy0: window.scrollY,
+        timer: liftable ? setTimeout(lift, 380) : null };
+    }, { passive: true });
+    wrap.addEventListener('touchmove', function (e) {
+      var g = gest;
+      if (!g || g.wrap !== wrap) return;
+      var p = e.touches[0];
+      g.dx = p.clientX - g.x0; g.dy = p.clientY - g.y0; g.cy = p.clientY;
+      if (g.mode === 'wait') {
+        var ax = Math.abs(g.dx), ay = Math.abs(g.dy);
+        if (ax > 12 && ax > ay * 1.5) { clearTimeout(g.timer); g.mode = 'swipe'; wrap.classList.add('swiping'); }
+        else if (ax > 10 || ay > 10) { cancelGesture(); return; }    // це прокрутка
+        else return;
+      }
+      if (e.cancelable) e.preventDefault();
+      if (g.mode === 'swipe') swipeMove(g); else if (g.mode === 'lift') liftMove(g);
+    }, { passive: false });
+    wrap.addEventListener('touchend', function () { endGesture(wrap); });
+    wrap.addEventListener('touchcancel', function () { cancelGesture(); });
+  }
+
+  function swipeMove(g) {
+    var w = g.wrap.offsetWidth;
+    var x = Math.max(-w, Math.min(w, g.dx));
+    g.row.style.transform = 'translateX(' + x + 'px)';
+    g.wrap.dataset.swipe = x > 0 ? 'done' : 'del';
+    g.wrap.classList.toggle('armed', Math.abs(x) > w * 0.33);
+  }
+
+  function resetSwipe(g) {
+    g.row.style.transition = 'transform .18s ease';
+    g.row.style.transform = '';
+    setTimeout(function () {
+      g.wrap.classList.remove('swiping', 'armed');
+      g.wrap.removeAttribute('data-swipe');
+      g.row.style.transition = '';
+    }, 200);
+  }
+
+  function lift() {
+    var g = gest;
+    if (!g || g.mode !== 'wait') return;
+    g.mode = 'lift';
+    g.wrap.classList.add('lifted');
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+    g.list = Array.prototype.slice.call(g.wrap.parentNode.querySelectorAll('.srow[data-top]'));
+    (function edge() {
+      // біля верхнього чи нижнього краю екрана список сам прокручується
+      if (gest !== g || g.mode !== 'lift') return;
+      var top = 140, bottom = window.innerHeight - 120, v = 0;
+      if (g.cy < top) v = -Math.min(14, (top - g.cy) / 5);
+      else if (g.cy > bottom) v = Math.min(14, (g.cy - bottom) / 5);
+      if (v) { window.scrollBy(0, v); liftMove(g); }
+      requestAnimationFrame(edge);
+    })();
+  }
+
+  function liftMove(g) {
+    g.wrap.style.transform = 'translateY(' + (g.dy + window.scrollY - g.sy0) + 'px)';
+    clearDrop();
+    g.target = null; g.after = false;
+    var others = g.list.filter(function (w) { return w !== g.wrap; });
+    for (var i = 0; i < others.length; i++) {
+      var r = others[i].getBoundingClientRect();
+      if (g.cy < r.top + r.height / 2) { g.target = others[i]; break; }
+    }
+    if (!g.target && others.length) { g.target = others[others.length - 1]; g.after = true; }
+    if (g.target) g.target.classList.add(g.after ? 'drop-after' : 'drop-before');
+  }
+
+  function endGesture(wrap) {
+    var g = gest;
+    if (!g || g.wrap !== wrap) return;
+    gest = null;
+    clearTimeout(g.timer);
+    if (g.mode === 'swipe') {
+      swallowClick = Date.now();
+      var w = wrap.offsetWidth, x = g.dx;
+      if (Math.abs(x) > w * 0.33) {
+        g.row.style.transition = 'transform .16s ease';
+        g.row.style.transform = 'translateX(' + (x > 0 ? w : -w) + 'px)';
+        setTimeout(function () { if (x > 0) toggleDone(g.t); else removeTask(g.t); }, 160);
+      } else resetSwipe(g);
+    } else if (g.mode === 'lift') {
+      swallowClick = Date.now();
+      clearDrop();
+      wrap.classList.remove('lifted');
+      wrap.style.transform = '';
+      var ref = g.target && g.target.dataset.id;
+      if (ref && ref !== g.t.id) moveTask(g.t.id, g.t.listId, ref, g.after);
+    }
+    if (renderLater) { renderLater = false; render(); }
+  }
+
+  function cancelGesture() {
+    var g = gest;
+    gest = null;
+    if (!g) return;
+    clearTimeout(g.timer);
+    if (g.mode === 'swipe') resetSwipe(g);
+    if (g.mode === 'lift') { clearDrop(); g.wrap.classList.remove('lifted'); g.wrap.style.transform = ''; }
+    if (renderLater) { renderLater = false; render(); }
   }
 
   function addBlock(listId, extra) {
@@ -842,7 +1090,8 @@
 
   function column(l) {
     var mode = ui.sort[l.id] || 'mine';
-    var canDrag = !mobileMq.matches && !hoverMq.matches;
+    var phone = mobileMq.matches;
+    var canDrag = !phone && !hoverMq.matches;
     var top = sorted(tasks().filter(function (t) { return t.listId === l.id && !t.parentId && !t.done; }), mode);
     var done = tasks().filter(function (t) {
       if (t.listId !== l.id || !t.done) return false;
@@ -851,20 +1100,25 @@
     }).sort(function (a, b) { return (b.doneAt || '').localeCompare(a.doneAt || '') || b.order - a.order; });
     var rows = [];
     top.forEach(function (t) {
-      rows.push(taskRow(t, { drag: canDrag }));
+      rows.push(taskRow(t, { drag: canDrag, lift: phone }));
       sorted(childrenOf(t.id).filter(function (s) { return !s.done; }), 'mine').forEach(function (s) { rows.push(taskRow(s, { sub: true })); });
     });
     var isOpen = !!ui.openDone[l.id];
     var limit = doneLimit[l.id] || DONE_SHOWN;
-    var col = h('section', { class: 'col', style: '--c:' + l.color, 'aria-label': l.name,
+    /* На телефоні назва списку вже у вкладці над ним — тут лише скільки й як упорядковано */
+    var tabbed = phone && lists().filter(function (x) { return x.visible; }).length > 1;
+    var SORT_NAMES = { mine: 'мій порядок', date: 'за датою', starred: 'спершу із зірочкою' };
+    var col = h('section', { class: 'col', style: '--c:' + l.color, 'aria-label': l.name, 'data-list': l.id,
       ondragover: function (e) { if (!dragId) return; e.preventDefault(); clearDrop(); col.classList.add('drop-col'); },
       ondragleave: function (e) { if (!col.contains(e.relatedTarget)) col.classList.remove('drop-col'); },
       ondrop: function (e) { if (!dragId) return; e.preventDefault(); clearDrop(); moveTask(dragId, l.id, null, true); } },
       h('div', { class: 'col-head' },
-        h('div', { class: 'col-title' }, h('i', { class: 'col-dot' }), h('span', {}, l.name),
-          top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null),
+        tabbed
+          ? h('div', { class: 'col-title' }, h('span', {}, (top.length ? top.length + ' ' + plural(top.length) : 'Немає завдань') + ' · ' + SORT_NAMES[mode]))
+          : h('div', { class: 'col-title' }, h('i', { class: 'col-dot' }), h('span', {}, l.name),
+              top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null),
         columnMenu(l, mode)),
-      addBlock(l.id),
+      phone ? null : addBlock(l.id),
       rows.length ? rows : h('div', { class: 'empty' }, done.length ? 'Усе виконано. Можна видихнути.' : 'Поки порожньо. Додайте перше завдання.'),
       done.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(isOpen),
         onclick: function () { ui.openDone[l.id] = !isOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Виконані (' + done.length + ')') : null,
@@ -942,7 +1196,7 @@
       input.focus();
       if (fresh) input.select();
     });
-    return h('section', { class: 'col', style: '--c:' + l.color }, h('div', { class: 'add-input' }, input));
+    return h('section', { class: 'col', style: '--c:' + l.color }, h('div', { class: 'add-input rename' }, input));
   }
 
   function renderBoard() {
@@ -960,14 +1214,9 @@
         return;
       }
       if (mobileMq.matches) {
-        var cur = vis.filter(function (l) { return l.id === ui.mList; })[0] || vis[0];
-        b.replaceChildren(
-          vis.length > 1 ? h('div', { class: 'tabs', role: 'tablist' }, vis.map(function (l) {
-            var n = openCount(l.id);
-            return h('button', { type: 'button', class: 'tab', role: 'tab', style: '--c:' + l.color, 'aria-selected': String(l === cur),
-              onclick: function () { ui.mList = l.id; saveUi(); render(); } }, h('i', { class: 'col-dot' }), l.name, n ? h('small', {}, n) : null);
-          })) : '',
-          renameList === cur.id ? renameCol(cur) : column(cur));
+        // вкладки списків — у шапці (renderTop), тут лише відкритий список
+        var cur = currentList();
+        b.replaceChildren(installBar() || '', renameList === cur.id ? renameCol(cur) : column(cur));
         return;
       }
       b.replaceChildren.apply(b, vis.map(function (l) { return renameList === l.id ? renameCol(l) : column(l); }));
@@ -985,9 +1234,9 @@
     }
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
     var total = groups.reduce(function (n, g) { return n + g[1].length; }, 0);
-    b.replaceChildren(h('section', { class: 'flat' },
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
       h('h2', {}, ui.view === 'today' ? 'Сьогодні' : 'Із зірочкою'),
-      first ? addBlock(first.id, ui.view === 'today' ? { due: t0 } : { starred: true }) : null,
+      first && !mobileMq.matches ? addBlock(first.id, ui.view === 'today' ? { due: t0 } : { starred: true }) : null,
       total ? groups.filter(function (g) { return g[1].length; }).map(function (g) {
         return [g[0] ? h('div', { class: 'group-label' }, g[0]) : null, g[1].map(function (t) { return taskRow(t, { showList: true }); })];
       }) : h('div', { class: 'empty' }, ui.view === 'today' ? 'На сьогодні нічого не заплановано.' : 'Позначте важливі завдання зірочкою, і вони з\'являться тут.')));
@@ -998,24 +1247,35 @@
   var drawerStamp = '';
   function stampOf(t) { return t.id + ':' + JSON.stringify(t) + childrenOf(t.id).map(function (c) { return c.title + c.done; }).join(); }
 
+  /** Закрити картку. fromBack — її вже закрила кнопка «Назад», крок історії знято. */
+  function closeDrawer(fromBack) {
+    var t = drawerTask && db.tasks[drawerTask];
+    drawerTask = null; drawerStamp = '';
+    if (!fromBack) popOverlay('drawer');
+    // порожнє, щойно створене кнопкою «Нове завдання», не лишаємо
+    if (t && !t.title.trim() && !t.notes.trim()) {
+      childrenOf(t.id).forEach(function (c) { delete db.tasks[c.id]; });
+      delete db.tasks[t.id];
+      commit();
+    } else render();
+  }
+
   function renderDrawer() {
     var layer = $('layer');
     var t = drawerTask && db.tasks[drawerTask];
-    if (!t) { drawerTask = null; drawerStamp = ''; if (layer.firstChild) layer.replaceChildren(); return; }
+    if (!t) {
+      // картку закрило щось інше (видалення, зміна з іншого пристрою) — крок історії теж прибираємо
+      if (drawerTask || overlay === 'drawer') popOverlay('drawer');
+      drawerTask = null; drawerStamp = '';
+      if (layer.firstChild) layer.replaceChildren();
+      return;
+    }
     if (drawerStamp === stampOf(t)) return;
     var active = document.activeElement;
     var focusId = active && active.id, selStart = active && active.selectionStart;
     drawerStamp = stampOf(t);
 
-    function close() {
-      drawerTask = null; drawerStamp = '';
-      // порожнє, щойно створене кнопкою «Нове завдання», не лишаємо
-      if (!t.title.trim() && !t.notes.trim()) {
-        childrenOf(t.id).forEach(function (c) { delete db.tasks[c.id]; });
-        delete db.tasks[t.id];
-        commit();
-      } else render();
-    }
+    function close() { closeDrawer(false); }
     function set(k, v) { t[k] = v; commit(); }
     function typed(k, v) { t[k] = v; quiet = true; commit(); quiet = false; drawerStamp = stampOf(t); }
 
@@ -1066,7 +1326,7 @@
         })),
         parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-list' }, 'Список'), list),
         parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-sub' }, 'Підзавдання'),
-          sorted(childrenOf(t.id), 'mine').map(function (c) { return taskRow(c); }), subInput),
+          sorted(childrenOf(t.id), 'mine').map(function (c) { return taskRow(c, { touch: false }); }), subInput),
         h('div', { class: 'drawer-foot' },
           delBtn,
           h('div', {},
@@ -1098,6 +1358,12 @@
     $('login').hidden = true;
     $('app').hidden = false;
     render();
+    // жести на телефоні не видно — один раз підказуємо
+    if (mobileMq.matches && !ui.tipGestures) {
+      ui.tipGestures = true;
+      saveUi();
+      setTimeout(function () { toast('Свайп праворуч: виконано. Ліворуч: видалити. Довге натискання: перетягнути.', null, 9000); }, 1500);
+    }
   }
 
   /** Копія в браузері належить конкретному входу: увійшли іншим акаунтом — починаємо з чистого. */
@@ -1149,9 +1415,104 @@
   });
   window.addEventListener('appinstalled', function () { installEvt = null; renderHead(); });
 
-  function closeNav() { $('app').classList.remove('nav-open'); }
+  function openNav() { $('app').classList.add('nav-open'); pushOverlay('nav'); }
+  function closeNav(fromBack) {
+    var app = $('app');
+    if (!app.classList.contains('nav-open')) return;
+    app.classList.remove('nav-open');
+    if (!fromBack) popOverlay('nav');
+  }
 
-  $('menuBtn').addEventListener('click', function (e) { e.stopPropagation(); $('app').classList.toggle('nav-open'); });
+  /* ---------- нове завдання на телефоні ----------
+     Кругла кнопка «+» відкриває панель над клавіатурою: назва й швидкі
+     налаштування (дата, зірочка, повтор, список). Enter додає й лишає
+     панель відкритою для наступного; закриває «Назад» або дотик повз неї. */
+  var sheet = null;
+
+  function openSheet() {
+    var l = ui.view === 'board' ? currentList() : (lists().filter(function (x) { return x.visible; })[0] || lists()[0]);
+    if (!l) { toast('Спершу створіть список у меню'); return; }
+    sheet = { listId: l.id, due: ui.view === 'today' ? today() : '', starred: ui.view === 'starred', repeat: 'none' };
+    pushOverlay('sheet');
+    renderSheet();
+  }
+
+  function closeSheet(fromBack) {
+    if (!sheet) return;
+    sheet = null;
+    $('sheet').replaceChildren();
+    if (!fromBack) popOverlay('sheet');
+  }
+
+  function renderSheet() {
+    var box = $('sheet');
+    var s = sheet, t0 = today(), t1 = addDays(t0, 1);
+    var input = h('input', { id: 'as-title', class: 'sheet-input', placeholder: 'Нове завдання', autocomplete: 'off',
+      enterkeyhint: 'done', 'aria-label': 'Назва завдання' });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+
+    /* Кнопки не забирають фокус у поля: інакше на кожен дотик ховалась би клавіатура */
+    function chip(icon, label, fn) {
+      return h('button', { type: 'button', class: 'schip', 'aria-pressed': 'false',
+        onpointerdown: function (e) { e.preventDefault(); }, onclick: fn }, icon, label);
+    }
+    var bToday = chip(svg(I.sun, 16), 'Сьогодні', function () { s.due = s.due === t0 ? '' : t0; paint(); });
+    var bTomorrow = chip(null, 'Завтра', function () { s.due = s.due === t1 ? '' : t1; paint(); });
+    var dateText = h('span', {}, 'Дата');
+    var picker = h('input', { type: 'date', class: 'chip-picker', 'aria-label': 'Обрати дату' });
+    picker.addEventListener('change', function () { s.due = picker.value; paint(); });
+    var bDate = h('label', { class: 'schip' }, svg(I.clock, 16), dateText, picker);
+    var bStar = chip(svg(I.star, 16, 1.8), 'Зірочка', function () { s.starred = !s.starred; paint(); });
+    var rep = h('select', { 'aria-label': 'Повтор' }, Object.keys(REPEATS).map(function (k) {
+      return h('option', { value: k }, k === 'none' ? 'Без повтору' : REPEATS[k]);
+    }));
+    rep.addEventListener('change', function () { s.repeat = rep.value; if (s.repeat !== 'none' && !s.due) s.due = t0; paint(); });
+    var bRep = h('label', { class: 'schip' }, svg(I.repeat, 16), rep);
+    var lsel = h('select', { 'aria-label': 'Список' }, lists().map(function (l) { return h('option', { value: l.id }, l.name); }));
+    lsel.addEventListener('change', function () { s.listId = lsel.value; paint(); });
+    var bList = h('label', { class: 'schip', 'aria-pressed': 'true' }, h('i', { class: 'col-dot' }), lsel);
+
+    function paint() {
+      var other = s.due && s.due !== t0 && s.due !== t1;
+      bToday.setAttribute('aria-pressed', String(s.due === t0));
+      bTomorrow.setAttribute('aria-pressed', String(s.due === t1));
+      bDate.setAttribute('aria-pressed', String(!!other));
+      dateText.textContent = other ? dueLabel(s.due) : 'Дата';
+      picker.value = s.due || '';
+      bStar.setAttribute('aria-pressed', String(s.starred));
+      bRep.setAttribute('aria-pressed', String(s.repeat !== 'none'));
+      rep.value = s.repeat;
+      lsel.value = s.listId;
+      bList.style.setProperty('--c', (listOf(s.listId) || {}).color || COLORS[0]);
+    }
+
+    function save() {
+      var title = input.value.trim();
+      if (!title) { input.focus(); return; }
+      addTask(s.listId, title, { due: s.due, starred: s.starred, repeat: s.repeat });
+      if (ui.view === 'board' && s.listId !== (currentList() || {}).id) toast('Додано в «' + listOf(s.listId).name + '»');
+      input.value = '';
+      input.focus();
+    }
+
+    box.replaceChildren(
+      h('div', { class: 'sheet-scrim', onclick: function () { closeSheet(); } }),
+      h('div', { class: 'add-sheet', role: 'dialog', 'aria-label': 'Нове завдання' },
+        input,
+        h('div', { class: 'sheet-chips' }, bToday, bTomorrow, bDate, bStar, bRep, bList),
+        h('div', { class: 'sheet-actions' },
+          h('button', { type: 'button', class: 'btn', onclick: function () { closeSheet(); } }, 'Закрити'),
+          h('button', { type: 'button', class: 'btn primary', onpointerdown: function (e) { e.preventDefault(); }, onclick: save }, 'Додати'))));
+    paint();
+    input.focus();    // одразу, ще в межах дотику до «+»: тоді телефон відкриває клавіатуру
+  }
+
+  $('fab').addEventListener('click', openSheet);
+
+  $('menuBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if ($('app').classList.contains('nav-open')) closeNav(); else openNav();
+  });
   document.addEventListener('click', function (e) {
     if (openMenu) { openMenu = null; armed = null; render(); }
     if ($('app').classList.contains('nav-open') && !$('side').contains(e.target)) closeNav();
@@ -1168,9 +1529,8 @@
     var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
     if (!l) { toast('Спершу створіть список у меню ліворуч'); return; }
     var t = addTask(l.id, '', ui.view === 'today' ? { due: today() } : {});
-    drawerTask = t.id;
-    closeNav();
-    render();
+    closeNav(true);     // меню змінюється карткою в межах того самого кроку історії
+    openDrawer(t.id);
   });
   $('newListForm').addEventListener('submit', function (e) {
     e.preventDefault();

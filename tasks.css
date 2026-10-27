@@ -80,13 +80,16 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .nav-item[aria-current="true"] { background: var(--accent-soft); color: var(--fg); font-weight: 600; }
 .nav-item .count { margin-left: auto; font-size: .85rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 .side-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); padding: 0 .8rem; }
-.list-row { display: flex; align-items: center; gap: .7rem; padding: .5rem .8rem; border-radius: .75rem; width: 100%; text-align: left; }
+/* Рядок списку: квадратик — показувати на дошці чи ні, назва — відкрити список */
+.list-row { display: flex; align-items: center; gap: .2rem; padding: 0 .5rem 0 .3rem; border-radius: .75rem; }
 .list-row:hover { background: var(--surface-2); }
-.list-row .dot { width: 1.05rem; height: 1.05rem; border-radius: .35rem; border: 2px solid var(--c); flex: none; display: grid; place-items: center; }
-.list-row[aria-pressed="true"] .dot { background: var(--c); }
-.list-row[aria-pressed="true"] .dot::after { content: ""; width: .35rem; height: .6rem; border: solid var(--bg); border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px); }
-.list-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list-row[aria-pressed="false"] .name { color: var(--muted); }
+.list-row[aria-current="true"] { background: var(--accent-soft); }
+.list-row .dot { position: relative; width: 2.2rem; height: 2.4rem; flex: none; display: grid; place-items: center; border-radius: .6rem; }
+.list-row .dot::before { content: ""; width: 1.05rem; height: 1.05rem; border-radius: .35rem; border: 2px solid var(--c); box-sizing: border-box; }
+.list-row .dot[aria-checked="true"]::before { background: var(--c); }
+.list-row .dot[aria-checked="true"]::after { content: ""; position: absolute; left: 50%; top: 50%; width: .32rem; height: .6rem; border: solid var(--bg); border-width: 0 2px 2px 0; transform: translate(-50%, -62%) rotate(45deg); }
+.list-row .name { flex: 1; min-width: 0; padding: .55rem .3rem; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row .dot[aria-checked="false"] + .name { color: var(--muted); }
 .list-row .count { font-size: .85rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 .new-list { display: flex; gap: .4rem; padding: 0 .3rem; }
 .new-list input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: .7rem; padding: .5rem .7rem; }
@@ -196,6 +199,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   padding-top: calc(1rem + env(safe-area-inset-top, 0px)); padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   padding-left: 1.25rem; padding-right: max(1.25rem, env(safe-area-inset-right, 0px));
 }
+.drawer > * { flex-shrink: 0; }   /* довга картка прокручується, а не сплющує поля */
 .drawer-head { display: flex; align-items: center; gap: .5rem; }
 .drawer-head .crumb { flex: 1; min-width: 0; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
 .drawer .star { opacity: 1; margin-top: 0; }
@@ -228,22 +232,128 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 }
 .toast button { color: var(--bg); font-weight: 600; text-decoration: underline; }
 
+/* ---------- панель нового завдання (телефон) ---------- */
+.sheet-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 32; }
+.add-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 33; background: var(--surface); border-radius: 1.4rem 1.4rem 0 0; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: .85rem;
+  padding: 1.1rem max(16px, env(safe-area-inset-right, 0px)) calc(.9rem + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.sheet-input { width: 100%; font-size: 1.15rem; background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: .3rem 0 .6rem; }
+.sheet-input:focus { outline: none; border-color: var(--accent); }
+.sheet-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.schip {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: .35rem; padding: .5rem .8rem; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); font-size: .9rem; white-space: nowrap;
+}
+.schip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.schip select { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: inherit; font: inherit; padding: 0; max-width: 10rem; }
+.schip .col-dot { width: .6rem; height: .6rem; }
+/* вибір дати — справжнє поле поверх кнопки, прозоре: дотик відкриває системний календар */
+.chip-picker { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
+.sheet-actions { display: flex; justify-content: flex-end; gap: .6rem; }
+
 /* ---------- телефон ---------- */
+.bnav, .fab { display: none; }
+
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; }
+  /* прокручується вся сторінка, а не внутрішня рамка: шапка зверху й панель знизу лишаються на місці */
+  html, body { height: auto; }
+  body { padding-top: 0; }
+  .app { display: block; min-height: 100vh; }
+  .main { display: block; height: auto; }
   .side {
     position: fixed; top: 0; bottom: 0; left: 0; width: min(19rem, 86%); z-index: 25; background: var(--bg); box-shadow: var(--shadow);
     padding-top: calc(1.25rem + env(safe-area-inset-top, 0px)); padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
     transform: translateX(-105%); transition: transform .2s;
   }
   .app.nav-open .side { transform: none; }
-  .topbar { display: flex; }
-  .topbar .brand { font-size: 1.15rem; }
-  .head { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-top: 1rem; }
-  .head-date { font-size: 1.4rem; }
-  .bar { width: 6rem; }
-  .board { flex-direction: column; align-items: stretch; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-top: .9rem; }
-  .col { flex: none; width: 100%; min-width: 0; max-width: none; }
-  .star { opacity: .55; }
+  .side .btn-create, .side #views { display: none; }   /* на телефоні це внизу: «+» і нижня панель */
+
+  .head { display: none; }
+  .topbar {
+    display: block; position: sticky; top: 0; z-index: 15; background: var(--bg); border-bottom: 1px solid var(--line);
+    padding: env(safe-area-inset-top, 0px) 0 0 0;
+  }
+  .topbar-row {
+    display: flex; align-items: center; gap: .4rem; min-height: 3.3rem;
+    padding: .3rem max(14px, env(safe-area-inset-right, 0px)) .3rem max(6px, env(safe-area-inset-left, 0px));
+  }
+  .top-title { flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-prog { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .top-prog .bar { width: 3.4rem; }
+  .top-prog .late { display: inline-flex; align-items: center; gap: .2rem; color: var(--warn); background: var(--warn-soft); border-radius: 999px; padding: .1rem .45rem; }
+  .topbar .tabs { padding: 0 max(14px, env(safe-area-inset-right, 0px)) .6rem max(14px, env(safe-area-inset-left, 0px)); }
+
+  .board {
+    display: block; overflow: visible;
+    padding: .4rem max(6px, env(safe-area-inset-right, 0px)) calc(7.5rem + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+  }
+  .col, .flat { background: transparent; border-radius: 0; padding: 0; width: auto; min-width: 0; max-width: none; }
+  .col-head { padding: .5rem .55rem .15rem .9rem; }
+  .col-title { font-size: 1rem; font-weight: 600; color: var(--muted); }
+  .flat h2 { margin: .6rem .55rem .2rem .9rem; font-size: 1.2rem; }
+  .add-row, .add-input:not(.rename) { display: none; }
+
+  /* завдання: більші цілі для пальця, без мерехтіння від «наведення» */
+  .task { padding: .7rem .45rem .7rem .55rem; gap: .85rem; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .task:hover { background: transparent; }
+  .check { position: relative; width: 1.6rem; height: 1.6rem; }
+  .check::before { content: ""; position: absolute; inset: -.75rem; }
+  .star { opacity: .5; width: 2.6rem; height: 2.6rem; margin: -.45rem -.35rem 0 0; }
+  .task.sub { margin-left: 2.4rem; }
+
+  /* свайп: під рядком — підказка, що станеться */
+  .srow { position: relative; border-radius: .9rem; overflow: hidden; touch-action: pan-y; }
+  .srow > .task { position: relative; z-index: 1; background: var(--bg); }
+  .srow::before, .srow::after {
+    position: absolute; inset: 0; display: flex; align-items: center; padding: 0 1.3rem; font-weight: 600; opacity: 0; transition: opacity .1s;
+  }
+  .srow::before { content: attr(data-ldone); background: var(--accent); color: var(--accent-ink); justify-content: flex-start; }
+  .srow::after { content: attr(data-ldel); background: var(--warn); color: var(--bg); justify-content: flex-end; }
+  .srow[data-swipe="done"]::before, .srow[data-swipe="del"]::after { opacity: .5; }
+  .srow.armed[data-swipe="done"]::before, .srow.armed[data-swipe="del"]::after { opacity: 1; }
+  /* довге натискання: завдання піднімається й іде за пальцем */
+  .srow.lifted { overflow: visible; z-index: 6; }
+  .srow.lifted > .task { background: var(--surface-2); box-shadow: var(--shadow); border-radius: .9rem; transform: scale(1.02); }
+  .srow.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+  .srow.drop-after { box-shadow: 0 2px 0 var(--accent); }
+
+  .bnav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line);
+    padding: .3rem max(8px, env(safe-area-inset-right, 0px)) calc(.3rem + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+  }
+  .bnav button { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: .15rem; padding: .3rem 0; font-size: .75rem; color: var(--muted); }
+  .bn-ico { width: 3.6rem; height: 2rem; border-radius: 1rem; display: grid; place-items: center; transition: background .15s; }
+  .bnav button[aria-current="true"] { color: var(--fg); font-weight: 600; }
+  .bnav button[aria-current="true"] .bn-ico { background: var(--accent-soft); color: var(--accent); }
+  .bn-badge {
+    position: absolute; top: .05rem; left: calc(50% + .7rem); min-width: 1.15rem; height: 1.15rem; padding: 0 .3rem; border-radius: 999px;
+    background: var(--surface-2); color: var(--fg); font-size: .7rem; font-weight: 600; display: grid; place-items: center; font-variant-numeric: tabular-nums;
+  }
+  .bn-badge.late { background: var(--warn); color: var(--bg); }
+  .fab {
+    display: grid; place-items: center; position: fixed; z-index: 21; width: 3.7rem; height: 3.7rem; border-radius: 1.2rem;
+    right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow);
+  }
+  .fab:active { transform: scale(.96); }
+
+  .install-bar { display: flex; align-items: center; gap: .8rem; margin: .4rem .55rem .2rem; padding: .7rem .9rem; border-radius: 1rem; background: var(--accent-soft); font-size: .92rem; }
+  .install-bar span { flex: 1; min-width: 0; }
+  .install-bar .btn { padding: .5rem .9rem; }
+
+  /* картка завдання — аркуш знизу, кнопки завжди під рукою */
+  .drawer {
+    top: auto; left: 0; width: 100%; max-height: calc(100dvh - 1.25rem - env(safe-area-inset-top, 0px));
+    border-radius: 1.4rem 1.4rem 0 0; padding-bottom: 0;
+  }
+  .drawer-foot {
+    position: sticky; bottom: 0; margin-top: auto; background: var(--surface);
+    padding-bottom: calc(.8rem + env(safe-area-inset-bottom, 0px));
+  }
+  .drawer-foot > div { margin-left: auto; }
+  .drawer-foot .btn { padding: .6rem .85rem; }
   .row2 { grid-template-columns: 1fr; }
+  .toast { bottom: calc(5.6rem + env(safe-area-inset-bottom, 0px)); }
 }
