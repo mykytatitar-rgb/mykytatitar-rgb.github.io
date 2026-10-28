@@ -136,9 +136,17 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .col.drop-col { outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -2px; }
 .col-dot { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); flex: none; }
 .pill { font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .1rem .55rem; font-variant-numeric: tabular-nums; }
-.col-head { display: flex; align-items: center; gap: .5rem; padding: 0 .55rem .35rem; }
-.col-title { font-family: var(--font-display); font-weight: 600; font-size: 1.2rem; flex: 1; min-width: 0; overflow-wrap: anywhere; text-wrap: balance; display: flex; align-items: center; gap: .6rem; }
-.col-title span { min-width: 0; }
+/* Назва списку — звичайним текстом: крапка й лічильник ідуть у рядку разом з нею, слова
+   переносяться цілими (не «COMPRA / S»), а кнопку «⋮» в куті обтікає лише перший рядок. */
+.col-head { padding: 0 .35rem .35rem .55rem; }
+.col-head::after { content: ""; display: block; clear: both; }
+.col-head .menu-wrap { float: right; margin: -.1rem -.1rem .1rem .3rem; }
+.col-title { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; line-height: 1.35; overflow-wrap: break-word; text-wrap: pretty; padding-top: .3rem; }
+.col-title .col-dot { display: inline-block; vertical-align: .06em; margin-right: .45rem; }
+.col-title .pill { display: inline-block; vertical-align: .1em; margin-left: .4rem; }
+/* у вузькій колонці лічильник ховаємо: він є біля списку в меню, а назві так просторіше */
+.col { container-type: inline-size; }
+@container (max-width: 19rem) { .col-title .pill { display: none; } }
 .tabs { display: flex; gap: .5rem; overflow-x: auto; scrollbar-width: none; flex: none; padding-bottom: .1rem; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { flex: none; display: inline-flex; align-items: center; gap: .45rem; padding: .45rem .9rem; border-radius: 999px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); }

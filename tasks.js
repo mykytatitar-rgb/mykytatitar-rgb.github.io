@@ -1361,12 +1361,13 @@
       ondragover: function (e) { if (!dragId) return; e.preventDefault(); clearDrop(); col.classList.add('drop-col'); },
       ondragleave: function (e) { if (!col.contains(e.relatedTarget)) col.classList.remove('drop-col'); },
       ondrop: function (e) { if (!dragId) return; e.preventDefault(); clearDrop(); moveTask(dragId, l.id, null, true); } },
+      // меню першим: воно стоїть у куті, а назва обтікає його
       h('div', { class: 'col-head' },
+        columnMenu(l, mode),
         tabbed
           ? h('div', { class: 'col-title' }, h('span', {}, (top.length ? top.length + ' ' + plural(top.length) : 'Немає завдань') + ' · ' + SORT_NAMES[mode]))
           : h('div', { class: 'col-title' }, h('i', { class: 'col-dot' }), h('span', {}, l.name),
-              top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null),
-        columnMenu(l, mode)),
+              top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null)),
       phone ? null : addBlock(l.id),
       // на комп'ютері кожен список гортається сам: шапка й «Додати завдання» лишаються на місці
       h('div', { class: 'col-body' },
