@@ -266,7 +266,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 #kick .modal { z-index: 39; }
 .modal {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(34rem, calc(100% - 32px));
-  max-height: calc(100dvh - 3rem); overflow-y: auto; background: var(--surface); border-radius: 1.4rem; box-shadow: var(--shadow);
+  max-height: calc(100dvh - 9rem); overflow-y: auto; background: var(--surface); border-radius: 1.4rem; box-shadow: var(--shadow);
   padding: 1.1rem 1.3rem 1.3rem; display: flex; flex-direction: column; gap: .9rem;
 }
 .modal > *, .tri > *, .pick > * { flex-shrink: 0; }
@@ -362,6 +362,60 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 /* вибір дати — справжнє поле поверх кнопки, прозоре: дотик відкриває системний календар */
 .chip-picker { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; }
 .sheet-actions { display: flex; justify-content: flex-end; gap: .6rem; }
+
+/* ---------- «Зараз»: одна справа ---------- */
+.flat.now { width: min(40rem, 100%); }
+.now-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; margin: 0 .55rem .4rem; }
+.flat .now-head h2 { margin: 0; }
+.seg.energy { align-self: auto; }
+.seg.energy button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.now-card, .now-empty { margin: .3rem .55rem; padding: 1.4rem 1.3rem 1.1rem; border-radius: 1.2rem; background: var(--surface-2); }
+.now-card { display: flex; flex-direction: column; align-items: flex-start; gap: .95rem; }
+.now-title { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; line-height: 1.2; text-align: left; overflow-wrap: anywhere; text-wrap: balance; }
+.now-title:hover { color: var(--accent); }
+.now-step { display: flex; align-items: flex-start; gap: .75rem; align-self: stretch; padding: .75rem .9rem; border-radius: .9rem; background: var(--surface); overflow-wrap: anywhere; }
+.now-step small { display: block; margin-bottom: .1rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
+.now-go { display: inline-flex; align-items: center; gap: .55rem; font-size: 1.1rem; padding: .85rem 1.5rem; border-radius: 1rem; }
+.now-mins { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; color: var(--faint); font-size: .9rem; }
+.now-mins button { padding: .3rem .75rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .85rem; }
+.now-mins button:hover { color: var(--fg); border-color: var(--faint); }
+.now-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.now-next { margin: .7rem .55rem 0; color: var(--muted); font-size: .92rem; overflow-wrap: anywhere; }
+.now-next b { color: var(--fg); font-weight: 500; }
+.now-empty { display: flex; flex-direction: column; gap: .7rem; }
+.now-empty-title { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; }
+.now-empty p { margin: 0; color: var(--muted); }
+
+/* таймер: кільце тане, поки йде час */
+.kick-dial { display: grid; place-items: center; width: min(13rem, 62vw); aspect-ratio: 1; }
+.kick-dial > * { grid-area: 1 / 1; }
+.kick-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.kick-ring circle { fill: none; stroke-width: 7; }
+.kick-ring .track { stroke: var(--surface-2); }
+.kick-ring .arc { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .25s linear; }
+.kick-dial .kick-time { font-size: 3rem; }
+.modal.kick .park { align-self: stretch; margin-top: .4rem; text-align: left; }
+.park-note { min-height: 1.2em; color: var(--accent); font-size: .88rem; }
+
+/* оцінка часу, навантаження дня, чистий аркуш, нудьга */
+.field-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); }
+.quick button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
+.load { padding: .65rem .9rem; border-radius: .9rem; background: var(--surface-2); color: var(--muted); font-size: .9rem; }
+.load.over { background: var(--warn-soft); color: var(--warn); }
+.fresh { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .2rem .8rem; padding: .6rem .9rem; border-radius: .9rem; border: 1px dashed var(--line); color: var(--muted); font-size: .9rem; }
+.icnu { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: .45rem; line-height: 1.45; }
+.icnu b { font-weight: 600; }
+.group-label.win { color: var(--accent); }
+
+/* маленький салют за виконане */
+.burst { position: fixed; z-index: 45; width: 0; height: 0; pointer-events: none; }
+.burst i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: burst .65s cubic-bezier(.2, .7, .3, 1) forwards; }
+.burst i:nth-child(3n) { background: var(--star); }
+.burst i:nth-child(3n+1) { background: var(--sky); }
+@keyframes burst {
+  from { transform: rotate(var(--a)) translateY(0) scale(1); opacity: 1; }
+  to { transform: rotate(var(--a)) translateY(calc(-1 * var(--d))) scale(.3); opacity: 0; }
+}
 
 /* ---------- телефон ---------- */
 .bnav, .fab { display: none; }
@@ -480,4 +534,13 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   .matrix-rule { margin-left: .9rem; }
   .plan-card { margin-inline: .45rem; }
   .group-row { padding-left: .9rem; padding-right: .7rem; }
+
+  .now-head { margin: .6rem .55rem .3rem .9rem; }
+  .now-card, .now-empty { margin-inline: .45rem; padding: 1.2rem 1.05rem 1rem; }
+  .now-title { font-size: 1.45rem; }
+  .now-go { align-self: stretch; justify-content: center; }
+  .now-actions { align-self: stretch; }
+  .now-actions .btn { flex: 1; }
+  .now-next { margin-left: .9rem; }
+  .bnav button { font-size: .72rem; }
 }

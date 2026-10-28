@@ -63,10 +63,31 @@
     fail: { thought: 'Все одно нічого не вийде', name: 'Передбачення майбутнього', act: 'kick',
       reframe: 'Це прогноз, а не факт. Що найімовірніше станеться, якщо просто почати?' },
     others: { thought: 'Інші зроблять краще, а я ні', name: 'Знецінення себе', act: 'step',
-      reframe: 'Що ви сказали б другові з такою думкою? Порівнюйте себе з учорашнім собою, а не з іншими.' }
+      reframe: 'Що ви сказали б другові з такою думкою? Порівнюйте себе з учорашнім собою, а не з іншими.' },
+    // дві думки, найчастіші при ADHD: тут не викривлення, а те, як влаштована увага
+    bored: { thought: 'Нудно, не тягне', name: 'Нудьга, а не лінь', act: 'icnu',
+      reframe: 'Мозок з ADHD запускає не «важливо», а цікаве, виклик, новизна чи терміновість. Додайте до справи хоч одне з них.' },
+    overwhelm: { thought: 'Забагато всього, не знаю, за що хапатися', name: 'Параліч вибору', act: 'now',
+      reframe: 'Коли справ багато, мозок тримає їх усі одразу й не обирає жодної. Найкращу обирати не треба: візьміть цю на 5 хвилин, решта почекає.' }
   };
-  var BLOCKER_ORDER = ['big', 'perfect', 'unclear', 'mood', 'always', 'must', 'fail', 'others'];
+  var BLOCKER_ORDER = ['big', 'bored', 'unclear', 'overwhelm', 'mood', 'perfect', 'fail', 'always', 'must', 'others'];
   var FOCUS_MAX = 3;      // головних справ на день: більше — і вони перестають бути головними
+
+  /* Як зробити нудну справу цікавішою: інтерес, виклик, новизна, терміновість
+     (так званий interest-based nervous system, Вільям Додсон) і ще компанія. */
+  var ICNU = [
+    ['Цікавість:', 'поєднайте з приємним: музика, подкаст, улюблений напій.'],
+    ['Виклик:', 'гонка з таймером: скільки встигнете за 10 хвилин?'],
+    ['Новизна:', 'інше місце чи спосіб: інший стіл, кав\'ярня, надиктувати замість писати.'],
+    ['Терміновість:', 'пообіцяйте комусь результат до конкретної години.'],
+    ['Не наодинці:', 'робіть поруч із кимось, хоч на відеодзвінку (body doubling).']
+  ];
+
+  var EST_STEPS = [5, 15, 30, 60, 90];   // скільки часу забере справа, хвилин
+  var TIMER_MINS = [2, 5, 15, 25];
+  /* Похвала одразу після виконаного: мозку з ADHD нагорода потрібна зараз, а не колись. */
+  var PRAISE = ['Готово. Так тримати.', 'Ще одна справа з голови.', 'Мінус одна. Хороший темп.',
+    'Зроблено. Це рахується.', 'Є! Наступна піде легше.'];
 
   /* ============================================================
      Дрібниці
@@ -171,7 +192,9 @@
     target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
     grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>',
     knot: '<path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5H4.5z"/><path d="M10 9.2a2 2 0 113.2 1.6c-.8.5-1.2.9-1.2 1.7"/><circle cx="12" cy="14.2" r=".5" fill="currentColor"/>',
-    play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>'
+    play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
+    bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
+    hourglass: '<path d="M7 3.5h10M7 20.5h10"/><path d="M8 3.5c0 4.2 4 5.3 4 8.5s-4 4.3-4 8.5M16 3.5c0 4.2-4 5.3-4 8.5s4 4.3 4 8.5"/>'
   };
   function svg(d, size, sw) {
     var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -206,7 +229,8 @@
       focus: isDay(o.focus) ? o.focus : '',              // день, на який справу обрали головною
       postponed: Math.max(0, Math.floor(Number(o.postponed) || 0)),   // скільки разів прострочене переносили далі
       blocker: BLOCKERS[o.blocker] ? o.blocker : '',     // що заважало востаннє («Що заважає?»)
-      blockerAt: isDay(o.blockerAt) ? o.blockerAt : ''
+      blockerAt: isDay(o.blockerAt) ? o.blockerAt : '',
+      est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0)))   // скільки хвилин займе, 0 — не оцінено
     };
   }
 
@@ -306,7 +330,7 @@
   function isStuck(t) { return !t.done && !t.parentId && (daysLate(t) >= 3 || t.postponed >= 2); }
   function stuckText(t) {
     var out = [], d = daysLate(t);
-    if (d) out.push('прострочено на ' + d + ' ' + forms(d, 'день', 'дні', 'днів'));
+    if (d) out.push('чекає вже ' + d + ' ' + forms(d, 'день', 'дні', 'днів'));
     if (t.postponed) out.push('переносилося ' + t.postponed + ' ' + forms(t.postponed, 'раз', 'рази', 'разів'));
     var s = out.join(', ');
     return s.charAt(0).toUpperCase() + s.slice(1);
@@ -315,6 +339,68 @@
   function setDue(t, v) {
     if (v && t.due && t.due <= today() && v > t.due) t.postponed += 1;
     t.due = v;
+  }
+
+  /** Звичка (щодня, щобудні), не зроблена вчора, просто переходить на сьогодні:
+      пропуск не накопичується боргом і не висить у «минулих днях». */
+  function rollHabits() {
+    var t0 = today(), n = 0;
+    tasks().forEach(function (t) {
+      if (t.done || !t.due || t.due >= t0 || (t.repeat !== 'daily' && t.repeat !== 'weekdays')) return;
+      var d = t0;
+      while (t.repeat === 'weekdays' && parseDay(d).getDay() % 6 === 0) d = addDays(d, 1);
+      t.due = d;
+      n++;
+    });
+    return n;
+  }
+
+  /** 5 хв, 1 год, 1,5 год, 2 год 15 хв. */
+  function estLabel(m) {
+    if (m < 60) return m + ' хв';
+    var hr = Math.floor(m / 60), r = m % 60;
+    if (r === 30 && hr < 3) return hr + ',5 год';
+    return hr + ' год' + (r ? ' ' + r + ' хв' : '');
+  }
+
+  /* ---------- «Зараз» ----------
+     Одна справа замість довгого списку: при ADHD довгий список паралізує
+     вибором, а одна справа з таймером починається. Черга: головне на
+     сьогодні, потім на сьогодні, потім з минулих днів. «Не зараз» відсуває
+     справу в кінець черги до завтра. Коли сил мало, першими йдуть короткі
+     (до 15 хвилин) і ті, де вже записано перший крок: мала перемога
+     розганяє краще за велику. */
+
+  var nowAll = false;   // на сьогодні нічого не обрано, а людина хоче взяти будь-яку
+
+  function isQuick(t) { return (t.est > 0 && t.est <= 15) || childrenOf(t.id).some(function (c) { return !c.done; }); }
+  function laterIds() { return ui.later && ui.later.day === today() ? ui.later.ids : []; }
+  /** «Сил мало» — стан на сьогодні: завтра знову з чистого. */
+  function lowEnergy() { return ui.energy === 'low' && ui.energyDay === today(); }
+
+  function nowQueue() {
+    var t0 = today(), later = laterIds(), low = lowEnergy();
+    function rank(t) {
+      if (isFocus(t)) return 0;
+      if (t.due === t0) return 1;
+      if (t.due && t.due < t0) return 2;
+      return nowAll ? (t.starred ? 3 : 4) : -1;
+    }
+    var quick = {};
+    var q = tasks().filter(function (t) { return !t.done && !t.parentId && rank(t) >= 0; });
+    if (low) q.forEach(function (t) { quick[t.id] = isQuick(t) ? 1 : 0; });
+    return q.sort(function (a, b) {
+      var la = later.indexOf(a.id), lb = later.indexOf(b.id);
+      return (la >= 0) - (lb >= 0) || la - lb ||
+        (low ? quick[b.id] - quick[a.id] : 0) ||
+        rank(a) - rank(b) || (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order;
+    });
+  }
+
+  /** Тривалість таймера за замовчуванням: оцінка справи, але не довше 25 хвилин; мало сил — 5. */
+  function timerMins(t) {
+    if (lowEnergy()) return 5;
+    return t.est ? Math.min(t.est, 25) : 15;
   }
 
   /* ============================================================
@@ -598,6 +684,7 @@
       db.lists.my = mkList({ id: 'my', name: 'Мої справи', color: COLORS[0], visible: true, order: 0 });
       commit();
     }
+    if (rollHabits()) commit();
   }
 
   /* ============================================================
@@ -675,7 +762,8 @@
       db.tasks[copy.id] = copy;
       t.due = nextDue(t.due, t.repeat);
       commit();
-      toast('Виконано. Наступне: ' + dueLabel(t.due).toLowerCase(), function () {
+      var next = dueLabel(t.due).toLowerCase();   // «пт, 30 жовт.» уже з крапкою
+      toast('Зроблено! Наступний раз: ' + next + (/\.$/.test(next) ? '' : '.'), function () {
         t.due = prevDue; delete db.tasks[copy.id]; commit();
       });
       return;
@@ -684,7 +772,26 @@
     t.doneAt = t.done ? today() : '';
     if (t.done) childrenOf(t.id).forEach(function (c) { c.done = true; c.doneAt = today(); });
     commit();
-    if (t.done) toast('Завдання виконано', function () { t.done = false; t.doneAt = ''; commit(); });
+    if (t.done) toast(praise(t), function () { t.done = false; t.doneAt = ''; commit(); });
+  }
+
+  function praise(t) {
+    if (t.parentId) return 'Крок зроблено. Далі легше.';
+    if (isFocus(t)) {
+      var f = focusToday(), left = f.filter(function (x) { return !x.done; }).length;
+      return left ? 'Головне: ' + (f.length - left) + ' з ' + f.length + ' зроблено.' : 'Усе головне на сьогодні зроблено. День уже вдався.';
+    }
+    return PRAISE[Math.floor(Math.random() * PRAISE.length)];
+  }
+
+  /** Маленький салют там, де натиснули: винагорода одразу, а не колись. */
+  function burst(el) {
+    if (!el || reduceMq.matches) return;
+    var r = el.getBoundingClientRect();
+    var b = h('div', { class: 'burst', 'aria-hidden': 'true', style: 'left:' + (r.left + r.width / 2) + 'px;top:' + (r.top + r.height / 2) + 'px' });
+    for (var i = 0; i < 10; i++) b.append(h('i', { style: '--a:' + (i * 36) + 'deg;--d:' + (26 + (i % 3) * 9) + 'px' }));
+    document.body.append(b);
+    setTimeout(function () { b.remove(); }, 800);
   }
 
   function addTask(listId, title, extra) {
@@ -805,6 +912,32 @@
     try { history.back(); } catch (e) { skipPops--; }
   }
   function isOpen(kind) { return overlays.indexOf(kind) >= 0; }
+  function closeTop() {
+    var kind = overlays[overlays.length - 1];
+    if (kind === 'sheet') closeSheet();
+    else if (kind === 'drawer') closeDrawer();
+    else if (kind === 'nav') closeNav();
+    else if (kind === 'plan') closePlan();
+    else if (kind === 'help') closeHelp();
+    else if (kind === 'kick') closeKick();
+  }
+  /** Закрити всі вікна разом і прибрати їхні кроки з історії одним стрибком. */
+  function closeOverlays() {
+    var n = overlays.length;
+    if (!n) return;
+    overlays = [];
+    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true);
+    if (drawerTask) closeDrawer(true);
+    skipPops++;
+    try { history.go(-n); } catch (e) { skipPops--; }
+  }
+  function goNow() {
+    closeOverlays();
+    ui.view = 'now';
+    saveUi();
+    window.scrollTo(0, 0);
+    render();
+  }
   window.addEventListener('popstate', function () {
     if (skipPops) { skipPops--; return; }
     var kind = overlays.pop();
@@ -834,7 +967,7 @@
         h('div', { class: 'bar', role: 'progressbar', 'aria-label': 'Виконано сьогодні', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(doneToday) },
           h('i', { style: 'width:' + Math.round(doneToday / total * 100) + '%' })),
         h('span', { title: 'Сьогодні виконано ' + doneToday + ' з ' + total }, doneToday + '/' + total));
-      if (late) prog.append(h('span', { class: 'late', title: 'Прострочених: ' + late }, svg(I.clock, 13), late));
+      if (late) prog.append(h('span', { class: 'late', title: 'З минулих днів: ' + late }, svg(I.clock, 13), late));
     }
 
     var tabs = $('mtabs');
@@ -860,8 +993,9 @@
     var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
     var due = open.filter(function (t) { return t.due && t.due <= t0; });
     var late = due.some(function (t) { return t.due < t0; });
-    // на телефоні три розділи: «Важливі» — це верхній рядок матриці
+    // на телефоні чотири розділи: «Важливі» — це верхній рядок матриці
     var items = [
+      ['now', 'Зараз', I.bolt, 0],
       ['board', 'Списки', I.list, 0],
       ['today', 'Сьогодні', I.sun, due.length],
       ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length]
@@ -887,6 +1021,7 @@
     var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
     var t0 = today();
     var views = [
+      ['now', 'Зараз', I.bolt, 0],
       ['board', 'Усі списки', I.list, open.length],
       ['today', 'Сьогодні', I.sun, open.filter(function (t) { return t.due && t.due <= t0; }).length],
       ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length],
@@ -934,7 +1069,7 @@
           h('span', {}, 'Сьогодні ', h('b', {}, doneToday + ' з ' + total), ' виконано'),
           h('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(doneToday) },
             h('i', { style: 'width:' + Math.round(doneToday / total * 100) + '%' })),
-          late ? h('span', { class: 'late' }, late + ' простроч.') : null
+          late ? h('span', { class: 'late' }, 'з минулих днів: ' + late) : null
         ] : h('span', {}, ready ? 'На сьогодні нічого не заплановано' : ''),
         // план дня: поки головного не обрано — запрошення, потім — скільки з нього зроблено
         !ready ? null : focus.length
@@ -954,6 +1089,7 @@
     } else if (t.repeat !== 'none') {
       out.push(h('span', { class: 'chip' }, svg(I.repeat, 14), REPEATS[t.repeat]));
     }
+    if (t.est && !t.done) out.push(h('span', { class: 'chip', title: 'Скільки часу займе' }, svg(I.hourglass, 14), estLabel(t.est)));
     var subs = childrenOf(t.id);
     if (subs.length && !t.parentId && !t.done && showList) {
       out.push(h('span', { class: 'chip' }, svg(I.sub, 14), subs.filter(function (s) { return s.done; }).length + '/' + subs.length));
@@ -1015,10 +1151,11 @@
         moveTask(dragId, t.listId, t.id, after);
       } : null
     },
-      h('button', { type: 'button', class: 'check', 'aria-label': t.done ? 'Позначити невиконаним' : 'Позначити виконаним', onclick: function () {
+      h('button', { type: 'button', class: 'check', 'aria-label': t.done ? 'Позначити невиконаним' : 'Позначити виконаним', onclick: function (e) {
         if (t.done || reduceMq.matches) return toggleDone(t);
         if (row.classList.contains('completing')) return;
         row.classList.add('completing');
+        burst(e.currentTarget);
         setTimeout(function () { toggleDone(t); }, 420);
       } }),
       h('button', { type: 'button', class: 'task-body', onclick: function () { openDrawer(t.id); } },
@@ -1324,6 +1461,7 @@
       b.replaceChildren.apply(b, vis.map(function (l) { return renameList === l.id ? renameCol(l) : column(l); }));
       return;
     }
+    if (ui.view === 'now') { renderNow(b); return; }
     if (ui.view === 'matrix') { renderMatrix(b); return; }
     if (ui.view === 'today') { renderToday(b); return; }
     var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
@@ -1347,7 +1485,7 @@
       h('span', { class: 'plan-ico' }, svg(I.target, 20)),
       h('div', { class: 'plan-text' },
         h('b', {}, 'План на день'),
-        slim ? null : h('span', {}, (late ? 'Розібрати прострочене (' + late + ') й о' : 'О') + 'брати до трьох головних справ. Хвилина.')),
+        slim ? null : h('span', {}, (late ? 'Вирішити, що робити зі справами з минулих днів (' + late + '), й о' : 'О') + 'брати до трьох головних. Хвилина.')),
       h('button', { type: 'button', class: 'btn primary', onclick: function () { openPlan(); } }, slim ? 'Почати' : 'Спланувати'),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Не зараз', title: 'Не зараз',
         onclick: function () { ui.planSkip = today(); saveUi(); render(); } }, svg(I.close, 18)));
@@ -1363,6 +1501,8 @@
     var late = sorted(rest.filter(function (t) { return t.due < t0; }), 'date');
     var now = sorted(rest.filter(function (t) { return t.due === t0; }), 'mine');
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
+    // зроблене сьогодні — на видноті: «я нічого не встиг» рідко правда
+    var done = sorted(tasks().filter(function (t) { return t.done && !t.parentId && t.doneAt === t0; }), 'mine');
 
     b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
       h('h2', {}, 'Сьогодні'),
@@ -1377,13 +1517,85 @@
       first && !mobileMq.matches ? addBlock(first.id, { due: t0 }) : null,
       late.length ? [
         h('div', { class: 'group-row' },
-          h('div', { class: 'group-label' }, 'Прострочені'),
+          h('div', { class: 'group-label' }, 'З минулих днів'),
           h('button', { type: 'button', class: 'link-btn', onclick: function () { openPlan('triage'); } }, 'Розібрати')),
         late.map(function (t) { return taskRow(t, { showList: true }); })
       ] : null,
       now.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label' }, 'На сьогодні')),
         now.map(function (t) { return taskRow(t, { showList: true }); })] : null,
-      !focus.length && !late.length && !now.length ? h('div', { class: 'empty' }, 'На сьогодні нічого не заплановано.') : null));
+      !focus.length && !late.length && !now.length ? h('div', { class: 'empty' }, 'На сьогодні нічого не заплановано.') : null,
+      done.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
+        done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })] : null));
+  }
+
+  /* ---------- «Зараз»: одна справа ---------- */
+
+  function renderNow(b) {
+    var q = nowQueue(), t = q[0];
+    var energy = h('div', { class: 'seg energy', role: 'group', 'aria-label': 'Скільки зараз сил' },
+      [['ok', 'Сили є'], ['low', 'Сил мало']].map(function (x) {
+        return h('button', { type: 'button', 'aria-pressed': String((lowEnergy() ? 'low' : 'ok') === x[0]),
+          onclick: function () { ui.energy = x[0]; ui.energyDay = today(); saveUi(); render(); } }, x[1]);
+      }));
+    var body;
+    if (!t) {
+      var anyOpen = tasks().some(function (x) { return !x.done && !x.parentId; });
+      body = h('div', { class: 'now-empty' },
+        h('div', { class: 'now-empty-title' }, anyOpen ? 'На сьогодні нічого не обрано' : 'Усе зроблено'),
+        h('p', {}, anyOpen ? 'Оберіть до трьох головних справ або візьміть будь-яку з решти. По одній.'
+          : 'Відкритих справ немає. Можна відпочити з чистою совістю.'),
+        anyOpen ? h('div', { class: 'help-row' },
+          h('button', { type: 'button', class: 'btn primary', onclick: function () { openPlan('focus'); } }, 'Обрати головне'),
+          h('button', { type: 'button', class: 'btn', onclick: function () { nowAll = true; render(); } }, 'Взяти будь-яку')) : null);
+    } else {
+      var l = listOf(t.listId);
+      var step = sorted(childrenOf(t.id).filter(function (c) { return !c.done; }), 'mine')[0];
+      var mins = timerMins(t);
+      body = [
+        h('article', { class: 'now-card' },
+          h('div', { class: 'chips' },
+            isFocus(t) ? h('span', { class: 'chip focus' }, svg(I.target, 14), 'Головне') : null,
+            t.due ? h('span', { class: 'chip' + (t.due < today() ? ' late' : t.due === today() ? ' today' : '') }, svg(I.clock, 14), dueLabel(t.due)) : null,
+            t.est ? h('span', { class: 'chip' }, svg(I.hourglass, 14), estLabel(t.est)) : null,
+            l ? h('span', { class: 'chip list', style: '--c:' + l.color }, l.name) : null),
+          h('button', { type: 'button', class: 'now-title', title: 'Відкрити картку', onclick: function () { openDrawer(t.id); } }, t.title || 'Без назви'),
+          step ? h('div', { class: 'now-step' },
+            h('button', { type: 'button', class: 'check', 'aria-label': 'Крок зроблено', onclick: function (e) { burst(e.currentTarget); toggleDone(step); } }),
+            h('span', {}, h('small', {}, 'Перший крок'), step.title)) : null,
+          h('button', { type: 'button', class: 'btn primary now-go', onclick: function () { startKick(t, mins); } },
+            svg(I.play, 18), 'Почати · ' + estLabel(mins)),
+          h('div', { class: 'now-mins' }, h('span', {}, 'або'),
+            TIMER_MINS.filter(function (m) { return m !== mins; }).map(function (m) {
+              return h('button', { type: 'button', onclick: function () { startKick(t, m); } }, m + ' хв');
+            })),
+          h('div', { class: 'now-actions' },
+            h('button', { type: 'button', class: 'btn', onclick: function (e) { burst(e.currentTarget); toggleDone(t); } }, 'Готово'),
+            h('button', { type: 'button', class: 'btn', onclick: function () { notNow(t, q.length); } }, 'Не зараз')),
+          h('button', { type: 'button', class: 'quiet-link', onclick: function () { openHelp(t); } }, svg(I.knot, 16), 'Не можу взятися?')),
+        q.length > 1 ? h('div', { class: 'now-next' }, 'Далі: ', h('b', {}, q[1].title || 'Без назви'),
+          q.length > 2 ? ' · ще ' + (q.length - 2) : '') : null
+      ];
+    }
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat now' },
+      h('div', { class: 'now-head' }, h('h2', {}, 'Зараз'), energy),
+      planInvite(true),
+      body));
+  }
+
+  /** «Не зараз»: у кінець черги до завтра. Нічого не змінює в самій справі. */
+  function notNow(t, n) {
+    var t0 = today();
+    if (!ui.later || ui.later.day !== t0) ui.later = { day: t0, ids: [] };
+    ui.later.ids = ui.later.ids.filter(function (id) { return id !== t.id && db.tasks[id]; }).concat(t.id);
+    saveUi();
+    if (n < 2 && !nowAll && tasks().some(function (x) { return !x.done && !x.parentId && x.id !== t.id; })) {
+      nowAll = true;
+      render();
+      toast('На сьогодні більше нічого. Ось щось із решти.');
+      return;
+    }
+    render();
+    if (n < 2) toast('Інших відкритих справ немає.');
   }
 
   /* ---------- Матриця ----------
@@ -1489,7 +1701,7 @@
 
     layer.replaceChildren(
       h('div', { class: 'scrim', onclick: close }),
-      h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Деталі завдання', onkeydown: function (e) { if (e.key === 'Escape') close(); } },
+      h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Деталі завдання' },
         h('div', { class: 'drawer-head' },
           h('span', { class: 'crumb' }, parent ? 'Підзавдання: ' + parent.title : ((listOf(t.listId) || {}).name || '')),
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: close }, svg(I.close, 20))),
@@ -1514,6 +1726,11 @@
         h('div', { class: 'quick' }, [['Сьогодні', t0], ['Завтра', addDays(t0, 1)], ['Через тиждень', addDays(t0, 7)], ['Без дати', '']].map(function (x) {
           return h('button', { type: 'button', onclick: function () { setDue(t, x[1]); commit(); } }, x[0]);
         })),
+        // оцінка часу: проти «часової сліпоти» — видно, чи влазить день
+        parent || t.done ? null : h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Скільки часу займе'),
+          h('div', { class: 'quick est' }, EST_STEPS.map(function (m) {
+            return h('button', { type: 'button', 'aria-pressed': String(t.est === m), onclick: function () { set('est', t.est === m ? 0 : m); } }, estLabel(m));
+          }))),
         parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-list' }, 'Список'), list),
         parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-sub' }, 'Підзавдання'),
           sorted(childrenOf(t.id), 'mine').map(function (c) { return taskRow(c, { touch: false }); }), subInput),
@@ -1547,7 +1764,7 @@
   function showApp() {
     $('login').hidden = true;
     $('app').hidden = false;
-    render();
+    if (rollHabits()) commit(); else render();
     // жести на телефоні не видно — один раз підказуємо
     if (mobileMq.matches && !ui.tipGestures) {
       ui.tipGestures = true;
@@ -1748,9 +1965,9 @@
         h('div', { class: 'modal-head' },
           h('div', { class: 'steps' },
             !plan.queue.length ? null
-              : plan.step === 'triage' ? h('span', { class: 'on' }, '1. Прострочене')
-              : left ? h('button', { type: 'button', onclick: function () { plan.step = 'triage'; plan.i = 0; renderPlan(); } }, '1. Прострочене · ' + left)
-              : h('span', { class: 'past' }, '1. Прострочене'),
+              : plan.step === 'triage' ? h('span', { class: 'on' }, '1. Минулі дні')
+              : left ? h('button', { type: 'button', onclick: function () { plan.step = 'triage'; plan.i = 0; renderPlan(); } }, '1. Минулі дні · ' + left)
+              : h('span', { class: 'past' }, '1. Минулі дні'),
             h('span', { class: plan.step === 'focus' ? 'on' : '' }, (plan.queue.length ? '2. ' : '') + 'Головне')),
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: function () { closePlan(); } }, svg(I.close, 20))),
         body));
@@ -1769,9 +1986,26 @@
     var l = listOf(t.listId);
     function next() { plan.i++; renderPlan(); }
     function due(v) { return function () { setDue(t, v); commit(); next(); }; }
+    // що ще не розібрано; коли цього забагато, легше почати з чистого аркуша, ніж здатися
+    var rest = plan.queue.slice(plan.i).map(function (id) { return db.tasks[id]; })
+      .filter(function (x) { return x && !x.done && daysLate(x); });
+    function fresh() {
+      var was = rest.map(function (x) { return [x, x.due]; });
+      // звички — на сьогодні, решта — без дати; лічильник відкладань не росте
+      rest.forEach(function (x) { x.due = x.repeat !== 'none' ? t0 : ''; });
+      commit();
+      plan.i = plan.queue.length;
+      renderPlan();
+      var habits = rest.filter(function (x) { return x.repeat !== 'none'; }).length, other = rest.length - habits;
+      toast('Чистий аркуш: ' + [other ? other + ' ' + plural(other) + ' без дати' : '', habits ? 'звички (' + habits + ') на сьогодні' : '']
+        .filter(Boolean).join(', ') + '. Нічого не зникло.', function () {
+        was.forEach(function (p) { p[0].due = p[1]; });
+        commit();
+      }, 8000);
+    }
     return h('div', { class: 'tri' },
-      h('div', { class: 'modal-title' }, 'Прострочене'),
-      h('div', { class: 'modal-sub' }, (plan.i + 1) + ' з ' + plan.queue.length + '. На кожну справу одне рішення.'),
+      h('div', { class: 'modal-title' }, 'З минулих днів'),
+      h('div', { class: 'modal-sub' }, (plan.i + 1) + ' з ' + plan.queue.length + '. Без докорів: просто вирішіть, що з нею.'),
       h('div', { class: 'tri-card' },
         l ? h('span', { class: 'chip list', style: '--c:' + l.color }, l.name) : null,
         h('div', { class: 'tri-title' }, t.title || 'Без назви'),
@@ -1785,7 +2019,10 @@
         h('button', { type: 'button', class: 'btn danger', onclick: function () { removeTask(t); next(); } }, 'Відпустити')),
       h('div', { class: 'tri-foot' },
         h('button', { type: 'button', class: 'quiet-link', onclick: function () { openHelp(t); } }, svg(I.knot, 16), 'Що заважає?'),
-        h('button', { type: 'button', class: 'link-btn', onclick: next }, 'Пропустити')));
+        h('button', { type: 'button', class: 'link-btn', onclick: next }, 'Пропустити')),
+      rest.length >= 3 ? h('div', { class: 'fresh' },
+        h('span', {}, 'Забагато, щоб розбирати по одній?'),
+        h('button', { type: 'button', class: 'link-btn', onclick: fresh }, 'Чистий аркуш для всіх ' + rest.length)) : null);
   }
 
   function focusStep() {
@@ -1803,6 +2040,8 @@
     var n = Object.keys(plan.picked).length;
     var full = n >= FOCUS_MAX;
     var insight = blockerInsight();
+    // скільки часу займе обране — щоб день не планувати на 14 годин
+    var load = Object.keys(plan.picked).reduce(function (s, id) { var x = db.tasks[id]; return s + (x ? x.est : 0); }, 0);
     return h('div', { class: 'pick' },
       h('div', { class: 'modal-title' }, 'Головне на сьогодні'),
       h('div', { class: 'modal-sub' }, 'Оберіть до трьох. Решту теж можна робити, але ці три зроблять день вдалим.'),
@@ -1817,10 +2056,13 @@
             h('span', { class: 'cand-title' }, t.title || 'Без назви'),
             h('span', { class: 'cand-meta' },
               (t.focus === y ? 'учора було головним · ' : '') + QUADS[quadrant(t)].name.toLowerCase() +
-              (t.due ? ' · ' + dueLabel(t.due).toLowerCase() : '') + (l ? ' · ' + l.name : ''))));
+              (t.due ? ' · ' + dueLabel(t.due).toLowerCase() : '') + (t.est ? ' · ' + estLabel(t.est) : '') + (l ? ' · ' + l.name : ''))));
       })) : h('div', { class: 'empty' }, 'Відкритих справ немає. Можна просто жити.'),
       cands.length > shown.length ? h('button', { type: 'button', class: 'more', onclick: function () { plan.all = true; renderPlan(); } },
         'Показати всі ' + cands.length) : null,
+      load ? h('div', { class: 'load' + (load > 360 ? ' over' : '') }, load > 360
+        ? 'Разом ≈ ' + estLabel(load) + '. Це більше, ніж реально вміщає день. Залиште одну-дві: решта не зникне.'
+        : 'Разом ≈ ' + estLabel(load) + '. Закладайте в півтора раза більше: оцінки майже завжди оптимістичні.') : null,
       h('div', { class: 'modal-foot' },
         h('span', { class: 'pick-count' }, n + ' з ' + FOCUS_MAX),
         h('button', { type: 'button', class: 'btn primary', onclick: applyFocus }, n ? 'Готово' : 'Сьогодні без головного')));
@@ -1912,6 +2154,17 @@
   }
 
   function helpAction(t, b) {
+    if (b.act === 'icnu') {
+      return h('div', { class: 'help-act' },
+        h('ul', { class: 'icnu' }, ICNU.map(function (x) { return h('li', {}, h('b', {}, x[0]), ' ' + x[1]); })),
+        h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(t, 10); } }, svg(I.play, 16), ' Гонка з таймером: 10 хвилин'),
+        h('button', { type: 'button', class: 'link-btn', onclick: function () { startKick(t); } }, 'Або просто 2 хвилини'));
+    }
+    if (b.act === 'now') {
+      return h('div', { class: 'help-act' },
+        h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(t, 5); } }, svg(I.play, 16), ' Почати цю на 5 хвилин'),
+        h('button', { type: 'button', class: 'link-btn', onclick: goNow }, 'Відкрити «Зараз»: по одній справі'));
+    }
     if (b.act === 'kick') {
       return h('div', { class: 'help-act' },
         h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(t); } }, svg(I.play, 16), ' Почати на 2 хвилини'),
@@ -1946,30 +2199,84 @@
   }
 
   /* ============================================================
-     Дві хвилини
+     Таймер
      ============================================================
 
-     Правило двох хвилин: найважче — почати. Таймер не вимагає закінчити,
-     лише почати; потім можна спокійно зупинитися або продовжити. */
+     Час при ADHD «невидимий», тож він на екрані: кільце тане, поки йде
+     відлік. Дві хвилини — правило старту: найважче почати, закінчувати не
+     обов'язково. Довші — для самої роботи. Думку, що відволікає, не
+     проганяють, а записують на потім (прийом з КПТ для дорослих з ADHD)
+     і повертаються до справи. */
 
-  var kick = null;   // { id, end, iv }
-  var KICK_MS = 2 * 60 * 1000;
+  var kick = null;   // { id, end, total, iv, lock, parked }
+  var KICK_MIN = 2;
+  var RING = 2 * Math.PI * 54;
 
-  function startKick(t) {
+  function startKick(t, min) {
+    min = min || KICK_MIN;
     // «Що заважає?» змінюється таймером у межах того самого кроку історії
     if (help && swapOverlay('help', 'kick')) { help = null; $('help').replaceChildren(); }
-    else pushOverlay('kick');
+    else if (!isOpen('kick')) pushOverlay('kick');
+    var parked = kick ? kick.parked : 0, lock = kick ? kick.lock : null;
     if (kick) clearInterval(kick.iv);
-    kick = { id: t.id, end: Date.now() + KICK_MS, iv: null };
+    kick = { id: t.id, end: Date.now() + min * 60000, total: min * 60000, iv: null, lock: lock, parked: parked };
+    wakeAudio();
+    lockScreen();
     renderKick();
   }
 
   function closeKick(fromBack) {
     if (!kick) return;
     clearInterval(kick.iv);
+    unlockScreen();
     kick = null;
+    document.title = 'Справи';
     $('kick').replaceChildren();
     if (!fromBack) popOverlay('kick');
+  }
+
+  /** Екран не гасне, поки йде відлік: таймер має бути видно. */
+  function lockScreen() {
+    if (!kick || kick.lock || !navigator.wakeLock || document.hidden || Date.now() >= kick.end) return;
+    navigator.wakeLock.request('screen').then(function (l) {
+      if (!kick || kick.lock) { l.release().catch(function () {}); return; }
+      kick.lock = l;
+      l.addEventListener('release', function () { if (kick && kick.lock === l) kick.lock = null; });
+    }).catch(function () { /* не дозволили — таймер працює й так */ });
+  }
+  function unlockScreen() {
+    if (!kick || !kick.lock) return;
+    var l = kick.lock;
+    kick.lock = null;
+    try { l.release().catch(function () {}); } catch (e) {}
+  }
+
+  /* Сигнал наприкінці. Звук готуємо в мить натискання «Почати»: пізніше
+     браузер не дасть його ввімкнути без дотику людини. */
+  var audio = null;
+  function wakeAudio() {
+    try {
+      var A = window.AudioContext || window.webkitAudioContext;
+      if (!A) return;
+      if (!audio) audio = new A();
+      if (audio.state === 'suspended') audio.resume();
+    } catch (e) { audio = null; }
+  }
+  function chime() {
+    if (!audio) return;
+    try {
+      var t0 = audio.currentTime;
+      [[0, 660], [0.22, 880]].forEach(function (x) {
+        var o = audio.createOscillator(), g = audio.createGain();
+        o.type = 'sine';
+        o.frequency.value = x[1];
+        g.gain.setValueAtTime(0.0001, t0 + x[0]);
+        g.gain.exponentialRampToValueAtTime(0.18, t0 + x[0] + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + x[0] + 0.5);
+        o.connect(g); g.connect(audio.destination);
+        o.start(t0 + x[0]); o.stop(t0 + x[0] + 0.55);
+      });
+    } catch (e) { /* без звуку — лишається вібрація й екран */ }
   }
 
   function renderKick() {
@@ -1977,31 +2284,66 @@
     var t = kick && db.tasks[kick.id];
     if (!t) { closeKick(); return; }
     clearInterval(kick.iv);
+    var start = kick.total <= KICK_MIN * 60000;   // дві хвилини — щоб почати, а не закінчити
     var finished = Date.now() >= kick.end;
     var time = h('div', { class: 'kick-time', role: 'timer' });
+    var ring = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    ring.setAttribute('viewBox', '0 0 120 120');
+    ring.setAttribute('class', 'kick-ring');
+    ring.setAttribute('aria-hidden', 'true');
+    ring.innerHTML = '<circle cx="60" cy="60" r="54" class="track"/><circle cx="60" cy="60" r="54" class="arc"/>';
+    var arc = ring.lastChild;
+    arc.style.strokeDasharray = RING;
+
+    // думка на потім: записали — і назад до справи
+    var park = h('input', { class: 'help-input park', autocomplete: 'off', enterkeyhint: 'done',
+      placeholder: 'Інша думка? Запишіть на потім', 'aria-label': 'Думка на потім' });
+    var parkNote = h('div', { class: 'park-note', role: 'status' }, kick.parked ? 'На потім записано: ' + kick.parked : '');
+    park.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      var v = park.value.trim(), l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
+      if (!v || !l || !kick) return;
+      addTask(l.id, v, { due: '', starred: false });
+      kick.parked++;
+      park.value = '';
+      parkNote.textContent = 'Записано в «' + l.name + '» (' + kick.parked + '). Повертайтеся до справи.';
+    });
+
+    function done(e) { burst(e.currentTarget); if (!t.done) toggleDone(t); closeKick(); }
     box.replaceChildren(
       h('div', { class: 'modal-scrim' }),
-      h('div', { class: 'modal kick', role: 'dialog', 'aria-label': 'Дві хвилини' },
+      h('div', { class: 'modal kick', role: 'dialog', 'aria-label': 'Таймер' },
         h('div', { class: 'kick-task' }, t.title || 'Без назви'),
         finished ? [
-          h('div', { class: 'kick-done' }, 'Ви почали. Це найважче.'),
-          h('div', { class: 'modal-sub' }, 'Можна зупинитися з чистою совістю або продовжити, поки йде.'),
+          h('div', { class: 'kick-done' }, start ? 'Ви почали. Це найважче.' : 'Час вийшов.'),
+          h('div', { class: 'modal-sub' }, start ? 'Можна зупинитися з чистою совістю або продовжити, поки йде.'
+            : 'Якщо ви в потоці, продовжуйте. Якщо ні, перерва: встаньте, вода, кілька кроків.'),
           h('div', { class: 'help-row center' },
-            h('button', { type: 'button', class: 'btn primary', onclick: function () { if (!t.done) toggleDone(t); closeKick(); } }, 'Зроблено'),
-            h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Продовжу далі'))
+            h('button', { type: 'button', class: 'btn primary', onclick: done }, 'Зроблено'),
+            start ? h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Продовжу далі')
+              : h('button', { type: 'button', class: 'btn', onclick: function () { startKick(t, 5); } }, 'Ще 5 хв'),
+            start ? null : h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Досить на зараз'))
         ] : [
-          time,
-          h('div', { class: 'modal-sub' }, 'Лише дві хвилини, без вимоги закінчити.'),
-          h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Зупинити')
+          h('div', { class: 'kick-dial' }, ring, time),
+          h('div', { class: 'modal-sub' }, start ? 'Лише дві хвилини, без вимоги закінчити.' : 'Тільки ця справа. Решта почекає.'),
+          h('div', { class: 'help-row center' },
+            h('button', { type: 'button', class: 'btn primary', onclick: done }, 'Зроблено'),
+            h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Зупинити')),
+          park, parkNote
         ]));
-    if (finished) return;
+    if (finished) { document.title = 'Справи'; unlockScreen(); return; }
     function tick() {
       if (!kick) return;
       var left = Math.max(0, kick.end - Date.now());
       var s = Math.ceil(left / 1000);
-      time.textContent = Math.floor(s / 60) + ':' + pad(s % 60);
+      var txt = Math.floor(s / 60) + ':' + pad(s % 60);
+      time.textContent = txt;
+      arc.style.strokeDashoffset = String(RING * (1 - left / kick.total));
+      document.title = txt + ' · Справи';    // видно й на вкладці, коли перемкнулися деінде
       if (!left) {
         if (navigator.vibrate) { try { navigator.vibrate([120, 80, 120]); } catch (e) {} }
+        chime();
         renderKick();
       }
     }
@@ -2021,6 +2363,8 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && openMenu) { openMenu = null; render(); }
+    // Escape закриває верхнє вікно, де б не був фокус (після кнопки в картці він на сторінці)
+    else if (e.key === 'Escape' && overlays.length) { e.preventDefault(); closeTop(); }
     var tag = (document.activeElement && document.activeElement.tagName) || '';
     if ((e.key === 'n' || e.key === 'т') && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|TEXTAREA|SELECT/.test(tag) && !drawerTask && !$('app').hidden) {
       e.preventDefault();
@@ -2061,7 +2405,9 @@
      все, що лишилося в черзі, щоб на іншому пристрої воно вже було. */
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { if (Object.keys(outbox).length) sync(); return; }
-    render();       // могла змінитися дата — «сьогодні», прострочені
+    // могла змінитися дата — «сьогодні», минулі дні, звички
+    if (rollHabits()) commit(); else render();
+    lockScreen();   // браузер знімає заборону гасити екран, коли ховаємось
     sync();
   });
   window.addEventListener('online', function () { sync(); });
