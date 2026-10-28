@@ -36,7 +36,8 @@
   var REPEATS = { none: 'Не повторювати', daily: 'Щодня', weekdays: 'Щобудні', weekly: 'Щотижня', monthly: 'Щомісяця' };
 
   /* Матриця Ейзенгауера. Нічого окремо вводити не треба: важливе — із
-     зірочкою, термінове — з датою не пізніше завтра (прострочене теж). */
+     зірочкою, термінове — з датою на сьогодні чи раніше. Справ на майбутнє
+     в ній немає: вони з'являються у свій день. */
   var QUADS = {
     1: { name: 'Зробити зараз', hint: 'Важливо й терміново.' },
     2: { name: 'Запланувати', hint: 'Важливо, не терміново. Тут найбільше користі на довгу дистанцію.' },
@@ -316,12 +317,16 @@
   function listOf(id) { return db.lists[id] || null; }
   function childrenOf(id) { return tasks().filter(function (t) { return t.parentId === id; }); }
   function openCount(listId) {
-    return tasks().filter(function (t) { return t.listId === listId && !t.done && !t.parentId; }).length;
+    return tasks().filter(function (t) { return t.listId === listId && isOpenNow(t); }).length;
   }
+  /** Справа з датою в майбутньому: не показуємо її, доки не настане її день. */
+  function isFuture(t) { return !!t.due && t.due > today(); }
+  /** Відкрита справа верхнього рівня, яку видно вже сьогодні. */
+  function isOpenNow(t) { return !t.done && !t.parentId && !isFuture(t); }
 
   /* ---------- матриця, головне на день, «застрягло» ---------- */
 
-  function isUrgent(t) { return !!t.due && t.due <= addDays(today(), 1); }
+  function isUrgent(t) { return !!t.due && t.due <= today(); }
   function quadrant(t) { return t.starred ? (isUrgent(t) ? 1 : 2) : (isUrgent(t) ? 3 : 4); }
   function isFocus(t) { return t.focus === today(); }
   function focusToday() { return tasks().filter(function (t) { return !t.parentId && isFocus(t); }); }
@@ -384,6 +389,7 @@
       if (isFocus(t)) return 0;
       if (t.due === t0) return 1;
       if (t.due && t.due < t0) return 2;
+      if (t.due) return -1;            // на майбутнє: ще не час
       return nowAll ? (t.starred ? 3 : 4) : -1;
     }
     var quick = {};
@@ -990,7 +996,7 @@
 
   function renderNav() {
     var t0 = today();
-    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var open = tasks().filter(isOpenNow);
     var due = open.filter(function (t) { return t.due && t.due <= t0; });
     var late = due.some(function (t) { return t.due < t0; });
     // на телефоні чотири розділи: «Важливі» — це верхній рядок матриці
@@ -1018,7 +1024,7 @@
   }
 
   function renderSide() {
-    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var open = tasks().filter(isOpenNow);
     var t0 = today();
     var views = [
       ['now', 'Зараз', I.bolt, 0],
@@ -1331,7 +1337,11 @@
     var mode = ui.sort[l.id] || 'mine';
     var phone = mobileMq.matches;
     var canDrag = !phone && !hoverMq.matches;
-    var top = sorted(tasks().filter(function (t) { return t.listId === l.id && !t.parentId && !t.done; }), mode);
+    var top = sorted(tasks().filter(function (t) { return t.listId === l.id && isOpenNow(t); }), mode);
+    // справи на майбутнє сховані, доки не настане їхній день; знайти їх можна тут, згорнутими
+    var later = sorted(tasks().filter(function (t) { return t.listId === l.id && !t.parentId && !t.done && isFuture(t); }), 'date');
+    ui.openFuture = ui.openFuture || {};
+    var futureOpen = !!ui.openFuture[l.id];
     var done = tasks().filter(function (t) {
       if (t.listId !== l.id || !t.done) return false;
       var p = t.parentId && db.tasks[t.parentId];
@@ -1358,7 +1368,11 @@
               top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null),
         columnMenu(l, mode)),
       phone ? null : addBlock(l.id),
-      rows.length ? rows : h('div', { class: 'empty' }, done.length ? 'Усе виконано. Можна видихнути.' : 'Поки порожньо. Додайте перше завдання.'),
+      rows.length ? rows : h('div', { class: 'empty' }, done.length ? 'Усе виконано. Можна видихнути.'
+        : later.length ? 'Сьогодні тут нічого. Заплановане з\'явиться у свій день.' : 'Поки порожньо. Додайте перше завдання.'),
+      later.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(futureOpen),
+        onclick: function () { ui.openFuture[l.id] = !futureOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Заплановано (' + later.length + ')') : null,
+      futureOpen ? later.map(function (t) { return taskRow(t, { touch: false }); }) : null,
       done.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(isOpen),
         onclick: function () { ui.openDone[l.id] = !isOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Виконані (' + done.length + ')') : null,
       isOpen ? done.slice(0, limit).map(function (t) { return taskRow(t); }) : null,
@@ -1464,7 +1478,7 @@
     if (ui.view === 'now') { renderNow(b); return; }
     if (ui.view === 'matrix') { renderMatrix(b); return; }
     if (ui.view === 'today') { renderToday(b); return; }
-    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var open = tasks().filter(isOpenNow);
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
     var starred = sorted(open.filter(function (t) { return t.starred; }), 'date');
     b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
@@ -1479,7 +1493,7 @@
      ховає його до завтра: план корисний, коли він легкий, а не обов'язковий. */
   function planInvite(slim) {
     if (!ready || focusToday().length || ui.planSkip === today()) return null;
-    if (!tasks().some(function (t) { return !t.done && !t.parentId; })) return null;
+    if (!tasks().some(isOpenNow)) return null;
     var late = tasks().filter(function (t) { return !t.done && !t.parentId && daysLate(t); }).length;
     return h('div', { class: slim ? 'plan-bar' : 'plan-card' },
       h('span', { class: 'plan-ico' }, svg(I.target, 20)),
@@ -1605,7 +1619,7 @@
 
   function renderMatrix(b) {
     var by = { 1: [], 2: [], 3: [], 4: [] };
-    tasks().forEach(function (t) { if (!t.done && !t.parentId) by[quadrant(t)].push(t); });
+    tasks().forEach(function (t) { if (isOpenNow(t)) by[quadrant(t)].push(t); });
     var EMPTY = {
       1: 'Нічого не горить. Добре.',
       2: 'Позначте зірочкою те, що справді важливе, і воно з\'явиться тут.',
@@ -1630,7 +1644,7 @@
     b.replaceChildren(installBar() || '', h('section', { class: 'flat wide' },
       h('h2', {}, 'Матриця'),
       planInvite(true),
-      h('p', { class: 'matrix-rule' }, 'Важливе позначайте зірочкою. Терміновим вважається все з датою до завтра включно.'),
+      h('p', { class: 'matrix-rule' }, 'Важливе позначайте зірочкою. Термінове: з датою на сьогодні чи раніше. Справи на майбутнє з\'являться тут у свій день.'),
       h('div', { class: 'matrix' }, [1, 2, 3, 4].map(quad))));
   }
 
@@ -1713,7 +1727,9 @@
             onclick: function () { set('starred', !t.starred); } }, svg(I.star, 16, 1.8), 'Важливо'),
           h('button', { type: 'button', class: 'flag' + (isFocus(t) ? ' on' : ''), 'aria-pressed': String(isFocus(t)),
             onclick: function () { toggleFocus(t); } }, svg(I.target, 16), 'Головне сьогодні'),
-          h('span', { class: 'd-quad' }, 'Матриця: ' + QUADS[quadrant(t)].name.toLowerCase())),
+          h('span', { class: 'd-quad' }, isFuture(t)
+            ? 'Заплановано: з\'явиться в списку ' + dueLabel(t.due).toLowerCase()
+            : 'Матриця: ' + QUADS[quadrant(t)].name.toLowerCase())),
         parent || t.done ? null : isStuck(t)
           ? h('div', { class: 'stuck-hint' },
               h('span', {}, stuckText(t) + '. Схоже, щось заважає.'),
@@ -1903,7 +1919,8 @@
       var title = input.value.trim();
       if (!title) { input.focus(); return; }
       addTask(s.listId, title, { due: s.due, starred: s.starred, repeat: s.repeat, focus: s.focus ? today() : '' });
-      if (ui.view === 'board' && s.listId !== (currentList() || {}).id) toast('Додано в «' + listOf(s.listId).name + '»');
+      if (s.due > today()) toast('Заплановано на ' + dueLabel(s.due).toLowerCase() + ': з\'явиться в списку у свій день.');
+      else if (ui.view === 'board' && s.listId !== (currentList() || {}).id) toast('Додано в «' + listOf(s.listId).name + '»');
       if (s.focus) { s.focus = false; paint(); }    // головне — поштучно, не все підряд
       input.value = '';
       input.focus();
@@ -2033,7 +2050,7 @@
       var q = quadrant(t);
       return q === 1 ? 2 : q === 2 ? 3 : q === 3 ? 4 : 5;
     }
-    var cands = tasks().filter(function (t) { return !t.done && !t.parentId; }).sort(function (a, b) {
+    var cands = tasks().filter(isOpenNow).sort(function (a, b) {
       return score(a) - score(b) || (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order;
     });
     var shown = plan.all ? cands : cands.slice(0, 7);
