@@ -63,7 +63,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .login .btn.primary { padding: .75rem 1rem; }
 
 /* ---------- каркас ---------- */
-.app { display: grid; grid-template-columns: 17rem 1fr; height: 100%; }
+/* рядок сітки рівно у висоту вікна: інакше дошка росла б з найдовшим списком і горталась би вся сторінка */
+.app { display: grid; grid-template-columns: min(17rem, 300px) 1fr; grid-template-rows: minmax(0, 1fr); height: 100%; }
 .side {
   padding-block: 1.25rem; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: 1rem;
   display: flex; flex-direction: column; gap: 1.25rem; overflow-y: auto; border-right: 1px solid var(--line);
@@ -103,7 +104,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .sync[data-s="ok"] i { background: var(--accent); }
 .sync[data-s="local"] i, .sync[data-s="error"] i { background: var(--warn); }
 
-.main { min-width: 0; display: flex; flex-direction: column; height: 100%; }
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; height: 100%; }
 .topbar { display: none; align-items: center; gap: .8rem; padding-block: .8rem; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); }
 .icon-btn { width: 2.4rem; height: 2.4rem; border-radius: .75rem; display: grid; place-items: center; color: var(--muted); flex: none; }
 .icon-btn:hover { background: var(--surface-2); color: var(--fg); }
@@ -117,10 +118,21 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
 
 .board {
-  flex: 1; overflow: auto; display: flex; align-items: flex-start; gap: 1.1rem;
+  flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; gap: 1rem;
   padding-block: 1.25rem; padding-left: 1.25rem; padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
-.col { flex: 1 1 20rem; min-width: 18rem; max-width: 27rem; background: var(--surface); border-radius: 1.25rem; padding: 1rem .6rem .7rem; display: flex; flex-direction: column; gap: .2rem; }
+/* Колонки ділять ширину порівну, тож кілька списків уміщаються й з великим текстом.
+   Довгий список гортається всередині своєї колонки, не рухаючи решту дошки. */
+.col { flex: 1 1 0; min-width: 14rem; max-width: 30rem; max-height: 100%; background: var(--surface); border-radius: 1.25rem; padding: 1rem .6rem .7rem; display: flex; flex-direction: column; gap: .2rem; }
+.col-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: .2rem;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  /* краї м'яко згасають: рядок, що ховається за край, не виглядає обрізаним */
+  padding-block: .5rem; margin-block: -.3rem;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 .6rem, #000 calc(100% - .6rem), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 .6rem, #000 calc(100% - .6rem), transparent);
+}
+.board { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .col.drop-col { outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -2px; }
 .col-dot { width: .75rem; height: .75rem; border-radius: 50%; background: var(--c); flex: none; }
 .pill { font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: .1rem .55rem; font-variant-numeric: tabular-nums; }
@@ -454,6 +466,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
     padding: .4rem max(6px, env(safe-area-inset-right, 0px)) calc(7.5rem + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
   }
   .col, .flat { background: transparent; border-radius: 0; padding: 0; width: auto; min-width: 0; max-width: none; }
+  .col { max-height: none; }
+  .col-body { overflow: visible; padding-block: 0; margin-block: 0; -webkit-mask-image: none; mask-image: none; }   /* на телефоні гортається вся сторінка */
   .col-head { padding: .5rem .55rem .15rem .9rem; }
   .col-title { font-size: 1rem; font-weight: 600; color: var(--muted); }
   .flat h2 { margin: .6rem .55rem .2rem .9rem; font-size: 1.2rem; }

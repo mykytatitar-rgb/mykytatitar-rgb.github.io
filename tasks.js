@@ -1368,16 +1368,18 @@
               top.length ? h('span', { class: 'pill', title: top.length + ' ' + plural(top.length) }, top.length) : null),
         columnMenu(l, mode)),
       phone ? null : addBlock(l.id),
-      rows.length ? rows : h('div', { class: 'empty' }, done.length ? 'Усе виконано. Можна видихнути.'
-        : later.length ? 'Сьогодні тут нічого. Заплановане з\'явиться у свій день.' : 'Поки порожньо. Додайте перше завдання.'),
-      later.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(futureOpen),
-        onclick: function () { ui.openFuture[l.id] = !futureOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Заплановано (' + later.length + ')') : null,
-      futureOpen ? later.map(function (t) { return taskRow(t, { touch: false }); }) : null,
-      done.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(isOpen),
-        onclick: function () { ui.openDone[l.id] = !isOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Виконані (' + done.length + ')') : null,
-      isOpen ? done.slice(0, limit).map(function (t) { return taskRow(t); }) : null,
-      isOpen && done.length > limit ? h('button', { type: 'button', class: 'more', onclick: function () { doneLimit[l.id] = limit + 100; render(); } },
-        'Показати ще ' + Math.min(100, done.length - limit)) : null);
+      // на комп'ютері кожен список гортається сам: шапка й «Додати завдання» лишаються на місці
+      h('div', { class: 'col-body' },
+        rows.length ? rows : h('div', { class: 'empty' }, done.length ? 'Усе виконано. Можна видихнути.'
+          : later.length ? 'Сьогодні тут нічого. Заплановане з\'явиться у свій день.' : 'Поки порожньо. Додайте перше завдання.'),
+        later.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(futureOpen),
+          onclick: function () { ui.openFuture[l.id] = !futureOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Заплановано (' + later.length + ')') : null,
+        futureOpen ? later.map(function (t) { return taskRow(t, { touch: false }); }) : null,
+        done.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(isOpen),
+          onclick: function () { ui.openDone[l.id] = !isOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Виконані (' + done.length + ')') : null,
+        isOpen ? done.slice(0, limit).map(function (t) { return taskRow(t); }) : null,
+        isOpen && done.length > limit ? h('button', { type: 'button', class: 'more', onclick: function () { doneLimit[l.id] = limit + 100; render(); } },
+          'Показати ще ' + Math.min(100, done.length - limit)) : null));
     return col;
   }
 
@@ -1472,7 +1474,14 @@
         b.replaceChildren(installBar() || '', planInvite(true) || '', renameList === cur.id ? renameCol(cur) : column(cur));
         return;
       }
+      // колонки малюються наново, а гортання кожної має лишитися там, де було
+      var kept = {};
+      b.querySelectorAll('.col[data-list] > .col-body').forEach(function (x) { kept[x.parentNode.dataset.list] = x.scrollTop; });
       b.replaceChildren.apply(b, vis.map(function (l) { return renameList === l.id ? renameCol(l) : column(l); }));
+      b.querySelectorAll('.col[data-list] > .col-body').forEach(function (x) {
+        var y = kept[x.parentNode.dataset.list];
+        if (y) x.scrollTop = y;
+      });
       return;
     }
     if (ui.view === 'now') { renderNow(b); return; }
@@ -2426,9 +2435,40 @@
     if (rollHabits()) commit(); else render();
     lockScreen();   // браузер знімає заборону гасити екран, коли ховаємось
     sync();
+    checkUpdate(false);
   });
   window.addEventListener('online', function () { sync(); });
   setInterval(function () { if (!document.hidden && signedIn()) sync(); }, PULL_MS);
+
+  /* Нова версія. Вікно застосунку може стояти відкритим днями, а новий код
+     приходить лише з перезавантаженням. Тож коли повертаємося до вікна й
+     раз на 15 хвилин питаємо сайт, чи не змінився код. Змінився — тихо
+     перезавантажуємось, поки людина нічого не набирає, не тримає відкритих
+     вікон і не запустила таймер. Дані не губляться: усе вже в браузері. */
+  var codeTag = null, codeNew = false, lastTouch = 0;
+  ['pointerdown', 'keydown', 'wheel'].forEach(function (ev) {
+    document.addEventListener(ev, function () { lastTouch = Date.now(); }, { passive: true, capture: true });
+  });
+  function checkUpdate(quiet) {
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+    fetch('tasks.js', { method: 'HEAD', cache: 'no-store' }).then(function (res) {
+      var tag = res.ok && (res.headers.get('etag') || res.headers.get('last-modified'));
+      if (!tag) return;
+      if (codeTag === null) { codeTag = tag; return; }
+      if (tag !== codeTag) { codeNew = true; reloadIfIdle(quiet); }
+    }).catch(function () { /* без мережі перевіримо згодом */ });
+  }
+  function reloadIfIdle(quiet) {
+    if (!codeNew || overlays.length || dragId || gest) return;
+    var a = document.activeElement;
+    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    if (Date.now() - lastTouch < (quiet ? 60000 : 2000)) return;   // людина саме щось робить
+    var last = Number(lsGet('spravy.reloadAt')) || 0;
+    if (Date.now() - last < 10 * 60000) return;                     // не частіше разу на 10 хвилин
+    lsSet('spravy.reloadAt', String(Date.now()));
+    location.reload();
+  }
+  setInterval(function () { if (!document.hidden) checkUpdate(true); }, 15 * 60000);
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener('load', function () {
@@ -2441,6 +2481,7 @@
      ============================================================ */
 
   loadLocal();
+  checkUpdate();     // запам'ятати, яка версія коду зараз на сайті
   takeImportFromUrl().then(function () {
     if (!BASE) { setSync('error', 'Не налаштовано адресу бази'); }
     if (!signedIn()) { showLogin(''); return; }
