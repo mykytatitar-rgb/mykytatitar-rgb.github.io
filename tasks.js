@@ -35,6 +35,39 @@
   var SIZES = [['S', 15], ['M', 17], ['L', 19], ['XL', 21]];
   var REPEATS = { none: 'Не повторювати', daily: 'Щодня', weekdays: 'Щобудні', weekly: 'Щотижня', monthly: 'Щомісяця' };
 
+  /* Матриця Ейзенгауера. Нічого окремо вводити не треба: важливе — із
+     зірочкою, термінове — з датою не пізніше завтра (прострочене теж). */
+  var QUADS = {
+    1: { name: 'Зробити зараз', hint: 'Важливо й терміново.' },
+    2: { name: 'Запланувати', hint: 'Важливо, не терміново. Тут найбільше користі на довгу дистанцію.' },
+    3: { name: 'Швидко або делегувати', hint: 'Терміново, але не важливо.' },
+    4: { name: 'Колись або ніколи', hint: 'Не важливо й не терміново. Можна відпустити.' }
+  };
+
+  /* «Що заважає?» — думки, через які справа не починається. Кожна з них —
+     відоме когнітивне викривлення: назва, коротке переформулювання й одна
+     дія. Без лекцій: побачити думку збоку часто досить, щоб вона відпустила. */
+  var BLOCKERS = {
+    big: { thought: 'Це надто велике й складне', name: 'Катастрофізація', act: 'step',
+      reframe: 'Справа здається більшою, ніж є, бо мозок бачить її всю одразу. Яка найменша дія на 5 хвилин зрушить її з місця?' },
+    perfect: { thought: 'Треба ідеально, інакше нема сенсу', name: 'Мислення «все або нічого»', act: 'step',
+      reframe: 'Достатньо добре теж рахується. Якою була б чернетка на 70%? Покращити її можна потім.' },
+    unclear: { thought: 'Не знаю, з чого почати', name: 'Не викривлення, а нечіткий наступний крок', act: 'step',
+      reframe: 'Справа стоїть, коли незрозуміло, що саме робити руками. Запишіть першу фізичну дію: «відкрити…», «написати…», «знайти…».' },
+    mood: { thought: 'Немає настрою чи сил', name: 'Емоційне обґрунтування', act: 'kick',
+      reframe: 'Почуття не наказ. Мотивація частіше приходить після початку, ніж до нього. Дві хвилини, а далі вирішите.' },
+    always: { thought: 'Я завжди все відкладаю', name: 'Надмірне узагальнення', act: 'kick',
+      reframe: 'Відкладали раніше не означає відкладатимете завжди. Згадайте, коли вже робили щось схоже. Що тоді допомогло почати?' },
+    must: { thought: 'Я мушу, я повинен', name: 'Твердження «треба»', act: 'why',
+      reframe: '«Мушу» тисне й забирає вибір. Скажіть інакше: «Я вирішую зробити це, бо…». Навіщо це вам?' },
+    fail: { thought: 'Все одно нічого не вийде', name: 'Передбачення майбутнього', act: 'kick',
+      reframe: 'Це прогноз, а не факт. Що найімовірніше станеться, якщо просто почати?' },
+    others: { thought: 'Інші зроблять краще, а я ні', name: 'Знецінення себе', act: 'step',
+      reframe: 'Що ви сказали б другові з такою думкою? Порівнюйте себе з учорашнім собою, а не з іншими.' }
+  };
+  var BLOCKER_ORDER = ['big', 'perfect', 'unclear', 'mood', 'always', 'must', 'fail', 'others'];
+  var FOCUS_MAX = 3;      // головних справ на день: більше — і вони перестають бути головними
+
   /* ============================================================
      Дрібниці
      ============================================================ */
@@ -82,10 +115,12 @@
     return n;
   }
 
-  function plural(n) {
+  /** Відмінок після числа: 1 день, 3 дні, 5 днів. */
+  function forms(n, one, few, many) {
     var a = n % 10, b = n % 100;
-    return (a === 1 && b !== 11) || (a >= 2 && a <= 4 && (b < 12 || b > 14)) ? 'завдання' : 'завдань';
+    return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many;
   }
+  function plural(n) { return forms(n, 'завдання', 'завдання', 'завдань'); }
 
   function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3); }
 
@@ -132,7 +167,11 @@
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".8"/><circle cx="4" cy="12" r=".8"/><circle cx="4" cy="18" r=".8"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>',
-    sub: '<path d="M6 4v9a3 3 0 003 3h9"/><path d="M15 13l3 3-3 3"/>'
+    sub: '<path d="M6 4v9a3 3 0 003 3h9"/><path d="M15 13l3 3-3 3"/>',
+    target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
+    grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>',
+    knot: '<path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5H4.5z"/><path d="M10 9.2a2 2 0 113.2 1.6c-.8.5-1.2.9-1.2 1.7"/><circle cx="12" cy="14.2" r=".5" fill="currentColor"/>',
+    play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>'
   };
   function svg(d, size, sw) {
     var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -163,7 +202,11 @@
       done: !!o.done,
       doneAt: isDay(o.doneAt) ? o.doneAt : '',
       parentId: String(o.parentId || ''),
-      order: Number(o.order) || 0
+      order: Number(o.order) || 0,
+      focus: isDay(o.focus) ? o.focus : '',              // день, на який справу обрали головною
+      postponed: Math.max(0, Math.floor(Number(o.postponed) || 0)),   // скільки разів прострочене переносили далі
+      blocker: BLOCKERS[o.blocker] ? o.blocker : '',     // що заважало востаннє («Що заважає?»)
+      blockerAt: isDay(o.blockerAt) ? o.blockerAt : ''
     };
   }
 
@@ -250,6 +293,28 @@
   function childrenOf(id) { return tasks().filter(function (t) { return t.parentId === id; }); }
   function openCount(listId) {
     return tasks().filter(function (t) { return t.listId === listId && !t.done && !t.parentId; }).length;
+  }
+
+  /* ---------- матриця, головне на день, «застрягло» ---------- */
+
+  function isUrgent(t) { return !!t.due && t.due <= addDays(today(), 1); }
+  function quadrant(t) { return t.starred ? (isUrgent(t) ? 1 : 2) : (isUrgent(t) ? 3 : 4); }
+  function isFocus(t) { return t.focus === today(); }
+  function focusToday() { return tasks().filter(function (t) { return !t.parentId && isFocus(t); }); }
+  function daysLate(t) { return t.due && t.due < today() ? Math.round((parseDay(today()) - parseDay(t.due)) / 864e5) : 0; }
+  /** Застрягло: прострочене три дні й довше або вже двічі перенесене далі. */
+  function isStuck(t) { return !t.done && !t.parentId && (daysLate(t) >= 3 || t.postponed >= 2); }
+  function stuckText(t) {
+    var out = [], d = daysLate(t);
+    if (d) out.push('прострочено на ' + d + ' ' + forms(d, 'день', 'дні', 'днів'));
+    if (t.postponed) out.push('переносилося ' + t.postponed + ' ' + forms(t.postponed, 'раз', 'рази', 'разів'));
+    var s = out.join(', ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  /** Нова дата. Прострочене чи сьогоднішнє, перенесене далі, — це відкладання: рахуємо. */
+  function setDue(t, v) {
+    if (v && t.due && t.due <= today() && v > t.due) t.postponed += 1;
+    t.due = v;
   }
 
   /* ============================================================
@@ -595,7 +660,9 @@
   function toast(msg, undo, ms) {
     clearTimeout(toastTimer);
     var slot = $('toast-slot');
-    slot.replaceChildren(h('div', { class: 'toast', role: 'status' },
+    // над відкритою карткою чи планом — угорі, щоб не затуляти їхні кнопки
+    var top = overlays.some(function (k) { return k !== 'nav'; });
+    slot.replaceChildren(h('div', { class: 'toast' + (top ? ' top' : ''), role: 'status' },
       h('span', {}, msg),
       undo ? h('button', { type: 'button', onclick: function () { undo(); slot.replaceChildren(); } }, 'Скасувати') : null));
     toastTimer = setTimeout(function () { slot.replaceChildren(); }, ms || 5000);
@@ -629,6 +696,19 @@
     db.tasks[t.id] = t;
     commit();
     return t;
+  }
+
+  /** Головне на сьогодні: не більше трьох відкритих, інакше воно перестає бути головним. */
+  function focusFull() {
+    if (focusToday().filter(function (x) { return !x.done; }).length < FOCUS_MAX) return false;
+    toast('Уже ' + FOCUS_MAX + ' головні справи. Спершу зробіть або приберіть одну з них.');
+    return true;
+  }
+  function toggleFocus(t) {
+    if (isFocus(t)) { t.focus = ''; commit(); return; }
+    if (focusFull()) return;
+    t.focus = today();
+    commit();
   }
 
   function removeTask(t) {
@@ -700,28 +780,40 @@
   }
 
   /* ---------- «Назад» ----------
-     Відкрите вікно (картка завдання, панель додавання, меню) — окремий крок
-     в історії. Тоді системна кнопка «Назад» на телефоні закриває його, а не
-     виходить із застосунку. Одне вікно змінює інше в межах того самого
-     кроку: інакше запізнілий «назад» від першого закрив би друге. */
-  var overlay = null;     // 'drawer' | 'sheet' | 'nav'
+     Кожне відкрите вікно (картка завдання, панель додавання, меню, план дня,
+     «Що заважає?», таймер) — окремий крок в історії. Тоді системна кнопка
+     «Назад» на телефоні закриває верхнє вікно, а не виходить із застосунку.
+     Вікна можуть лежати одне на одному (картка → «Що заважає?»), тому стек. */
+  var overlays = [];      // відкриті вікна, верхнє — останнє
+  var skipPops = 0;       // «назад», які ми зробили самі, закриваючи вікно кнопкою
   function pushOverlay(kind) {
-    if (overlay) { overlay = kind; return; }
-    overlay = kind;
+    overlays.push(kind);
     try { history.pushState({ spravy: kind }, ''); } catch (e) { /* без історії — просто без «Назад» */ }
   }
-  function popOverlay(kind) {
-    if (!overlay || overlay !== kind) return;
-    overlay = null;
-    try { history.back(); } catch (e) {}
+  /** Одне вікно змінює інше в межах того самого кроку: інакше запізнілий «назад» закрив би нове. */
+  function swapOverlay(from, to) {
+    var i = overlays.lastIndexOf(from);
+    if (i < 0) return false;
+    overlays[i] = to;
+    return true;
   }
+  function popOverlay(kind) {
+    var i = overlays.lastIndexOf(kind);
+    if (i < 0) return;
+    overlays.splice(i, 1);
+    skipPops++;
+    try { history.back(); } catch (e) { skipPops--; }
+  }
+  function isOpen(kind) { return overlays.indexOf(kind) >= 0; }
   window.addEventListener('popstate', function () {
-    var kind = overlay;
-    if (!kind) return;
-    overlay = null;
+    if (skipPops) { skipPops--; return; }
+    var kind = overlays.pop();
     if (kind === 'sheet') closeSheet(true);
     else if (kind === 'drawer') closeDrawer(true);
     else if (kind === 'nav') closeNav(true);
+    else if (kind === 'plan') closePlan(true);
+    else if (kind === 'help') closeHelp(true);
+    else if (kind === 'kick') closeKick(true);
   });
 
   /* ---------- шапка й нижня панель телефона ---------- */
@@ -768,10 +860,11 @@
     var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
     var due = open.filter(function (t) { return t.due && t.due <= t0; });
     var late = due.some(function (t) { return t.due < t0; });
+    // на телефоні три розділи: «Важливі» — це верхній рядок матриці
     var items = [
       ['board', 'Списки', I.list, 0],
       ['today', 'Сьогодні', I.sun, due.length],
-      ['starred', 'Із зірочкою', I.star, open.filter(function (t) { return t.starred; }).length]
+      ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length]
     ];
     $('bnav').replaceChildren.apply($('bnav'), items.map(function (x) {
       return h('button', { type: 'button', 'aria-current': String(ui.view === x[0]),
@@ -796,7 +889,8 @@
     var views = [
       ['board', 'Усі списки', I.list, open.length],
       ['today', 'Сьогодні', I.sun, open.filter(function (t) { return t.due && t.due <= t0; }).length],
-      ['starred', 'Із зірочкою', I.star, open.filter(function (t) { return t.starred; }).length]
+      ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length],
+      ['starred', 'Важливі', I.star, open.filter(function (t) { return t.starred; }).length]
     ];
     $('views').replaceChildren.apply($('views'), views.map(function (v) {
       return h('button', { type: 'button', class: 'nav-item', 'aria-current': String(ui.view === v[0]),
@@ -832,6 +926,7 @@
     var date = new Date().toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' });
     date = date.charAt(0).toUpperCase() + date.slice(1);
     var canInstall = installEvt && !standaloneMq.matches;
+    var focus = focusToday(), focusDone = focus.filter(function (t) { return t.done; }).length;
     $('head').replaceChildren(
       h('div', { class: 'head-date' }, date),
       h('div', { class: 'head-sum' },
@@ -841,11 +936,18 @@
             h('i', { style: 'width:' + Math.round(doneToday / total * 100) + '%' })),
           late ? h('span', { class: 'late' }, late + ' простроч.') : null
         ] : h('span', {}, ready ? 'На сьогодні нічого не заплановано' : ''),
+        // план дня: поки головного не обрано — запрошення, потім — скільки з нього зроблено
+        !ready ? null : focus.length
+          ? h('button', { type: 'button', class: 'focus-pill', title: 'Головне на сьогодні', onclick: function () { openPlan('focus'); } },
+              svg(I.target, 15), 'Головне: ' + focusDone + ' з ' + focus.length)
+          : h('button', { type: 'button', class: 'btn', onclick: function () { openPlan(); } }, svg(I.target, 16), ' Спланувати день'),
         canInstall ? h('button', { type: 'button', class: 'btn primary', onclick: install }, 'Встановити застосунок') : null));
   }
 
   function chipsFor(t, showList) {
     var out = [];
+    if (isFocus(t) && !t.done && !t.parentId) out.push(h('span', { class: 'chip focus' }, svg(I.target, 14), 'Головне'));
+    if (isStuck(t)) out.push(h('span', { class: 'chip stuck', title: stuckText(t) }, 'застрягло'));
     if (t.due) {
       var late = !t.done && t.due < today(), now = t.due === today();
       out.push(h('span', { class: 'chip' + (late ? ' late' : now ? ' today' : '') }, svg(I.clock, 14), dueLabel(t.due), t.repeat !== 'none' ? svg(I.repeat, 14) : null));
@@ -1216,30 +1318,108 @@
       if (mobileMq.matches) {
         // вкладки списків — у шапці (renderTop), тут лише відкритий список
         var cur = currentList();
-        b.replaceChildren(installBar() || '', renameList === cur.id ? renameCol(cur) : column(cur));
+        b.replaceChildren(installBar() || '', planInvite(true) || '', renameList === cur.id ? renameCol(cur) : column(cur));
         return;
       }
       b.replaceChildren.apply(b, vis.map(function (l) { return renameList === l.id ? renameCol(l) : column(l); }));
       return;
     }
+    if (ui.view === 'matrix') { renderMatrix(b); return; }
+    if (ui.view === 'today') { renderToday(b); return; }
+    var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
+    var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
+    var starred = sorted(open.filter(function (t) { return t.starred; }), 'date');
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
+      h('h2', {}, 'Важливі'),
+      first && !mobileMq.matches ? addBlock(first.id, { starred: true }) : null,
+      starred.length ? starred.map(function (t) { return taskRow(t, { showList: true }); })
+        : h('div', { class: 'empty' }, 'Позначте важливі завдання зірочкою, і вони з\'являться тут.')));
+  }
+
+  /* ---------- «План на день»: запрошення ----------
+     Поки головного на сьогодні не обрано — тихе запрошення. «Не зараз»
+     ховає його до завтра: план корисний, коли він легкий, а не обов'язковий. */
+  function planInvite(slim) {
+    if (!ready || focusToday().length || ui.planSkip === today()) return null;
+    if (!tasks().some(function (t) { return !t.done && !t.parentId; })) return null;
+    var late = tasks().filter(function (t) { return !t.done && !t.parentId && daysLate(t); }).length;
+    return h('div', { class: slim ? 'plan-bar' : 'plan-card' },
+      h('span', { class: 'plan-ico' }, svg(I.target, 20)),
+      h('div', { class: 'plan-text' },
+        h('b', {}, 'План на день'),
+        slim ? null : h('span', {}, (late ? 'Розібрати прострочене (' + late + ') й о' : 'О') + 'брати до трьох головних справ. Хвилина.')),
+      h('button', { type: 'button', class: 'btn primary', onclick: function () { openPlan(); } }, slim ? 'Почати' : 'Спланувати'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Не зараз', title: 'Не зараз',
+        onclick: function () { ui.planSkip = today(); saveUi(); render(); } }, svg(I.close, 18)));
+  }
+
+  function renderToday(b) {
     var t0 = today();
     var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
-    var groups;
-    if (ui.view === 'today') {
-      var items = open.filter(function (t) { return t.due && t.due <= t0; });
-      groups = [['Прострочені', sorted(items.filter(function (t) { return t.due < t0; }), 'date')],
-                ['Сьогодні', sorted(items.filter(function (t) { return t.due === t0; }), 'mine')]];
-    } else {
-      groups = [['', sorted(open.filter(function (t) { return t.starred; }), 'date')]];
-    }
+    var focus = focusToday();
+    var focusOpen = sorted(focus.filter(function (t) { return !t.done; }), 'mine');
+    var focusDone = focus.length - focusOpen.length;
+    var rest = open.filter(function (t) { return t.due && t.due <= t0 && !isFocus(t); });
+    var late = sorted(rest.filter(function (t) { return t.due < t0; }), 'date');
+    var now = sorted(rest.filter(function (t) { return t.due === t0; }), 'mine');
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
-    var total = groups.reduce(function (n, g) { return n + g[1].length; }, 0);
+
     b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
-      h('h2', {}, ui.view === 'today' ? 'Сьогодні' : 'Із зірочкою'),
-      first && !mobileMq.matches ? addBlock(first.id, ui.view === 'today' ? { due: t0 } : { starred: true }) : null,
-      total ? groups.filter(function (g) { return g[1].length; }).map(function (g) {
-        return [g[0] ? h('div', { class: 'group-label' }, g[0]) : null, g[1].map(function (t) { return taskRow(t, { showList: true }); })];
-      }) : h('div', { class: 'empty' }, ui.view === 'today' ? 'На сьогодні нічого не заплановано.' : 'Позначте важливі завдання зірочкою, і вони з\'являться тут.')));
+      h('h2', {}, 'Сьогодні'),
+      planInvite(false),
+      focus.length ? [
+        h('div', { class: 'group-row' },
+          h('div', { class: 'group-label' }, 'Головне · ' + focusDone + ' з ' + focus.length),
+          h('button', { type: 'button', class: 'link-btn', onclick: function () { openPlan('focus'); } }, 'Змінити')),
+        focusOpen.length ? focusOpen.map(function (t) { return taskRow(t, { showList: true }); })
+          : h('div', { class: 'empty win' }, 'Головне на сьогодні зроблено. Усе інше буде бонусом.')
+      ] : null,
+      first && !mobileMq.matches ? addBlock(first.id, { due: t0 }) : null,
+      late.length ? [
+        h('div', { class: 'group-row' },
+          h('div', { class: 'group-label' }, 'Прострочені'),
+          h('button', { type: 'button', class: 'link-btn', onclick: function () { openPlan('triage'); } }, 'Розібрати')),
+        late.map(function (t) { return taskRow(t, { showList: true }); })
+      ] : null,
+      now.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label' }, 'На сьогодні')),
+        now.map(function (t) { return taskRow(t, { showList: true }); })] : null,
+      !focus.length && !late.length && !now.length ? h('div', { class: 'empty' }, 'На сьогодні нічого не заплановано.') : null));
+  }
+
+  /* ---------- Матриця ----------
+     Чотири квадранти рахуються самі: зірочка — важливо, дата до завтра —
+     терміново. Щоб перекласти справу, досить зірочки чи дати. */
+  var QUAD_SHOWN = 6;
+
+  function renderMatrix(b) {
+    var by = { 1: [], 2: [], 3: [], 4: [] };
+    tasks().forEach(function (t) { if (!t.done && !t.parentId) by[quadrant(t)].push(t); });
+    var EMPTY = {
+      1: 'Нічого не горить. Добре.',
+      2: 'Позначте зірочкою те, що справді важливе, і воно з\'явиться тут.',
+      3: 'Термінового неважливого немає.',
+      4: 'Порожньо.'
+    };
+    ui.qOpen = ui.qOpen || {};
+    function quad(q) {
+      var arr = q === 4 ? sorted(by[q], 'mine') : sorted(by[q], 'date');
+      var open = !!ui.qOpen[q];
+      var shown = open ? arr : arr.slice(0, QUAD_SHOWN);
+      return h('section', { class: 'quad q' + q, 'aria-label': QUADS[q].name },
+        h('div', { class: 'quad-head' },
+          h('span', { class: 'qnum' }, q),
+          h('span', { class: 'quad-name' }, QUADS[q].name),
+          arr.length ? h('span', { class: 'pill' }, arr.length) : null),
+        h('div', { class: 'quad-hint' }, QUADS[q].hint),
+        arr.length ? shown.map(function (t) { return taskRow(t, { showList: true }); }) : h('div', { class: 'empty' }, EMPTY[q]),
+        arr.length > QUAD_SHOWN ? h('button', { type: 'button', class: 'more', onclick: function () { ui.qOpen[q] = !open; saveUi(); render(); } },
+          open ? 'Згорнути' : 'Показати всі ' + arr.length) : null);
+    }
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat wide' },
+      h('h2', {}, 'Матриця'),
+      planInvite(true),
+      h('p', { class: 'matrix-rule' }, 'Важливе позначайте зірочкою. Терміновим вважається все з датою до завтра включно.'),
+      h('div', { class: 'matrix' }, [1, 2, 3, 4].map(quad))));
   }
 
   /* ---------- картка завдання ---------- */
@@ -1265,7 +1445,7 @@
     var t = drawerTask && db.tasks[drawerTask];
     if (!t) {
       // картку закрило щось інше (видалення, зміна з іншого пристрою) — крок історії теж прибираємо
-      if (drawerTask || overlay === 'drawer') popOverlay('drawer');
+      if (isOpen('drawer')) popOverlay('drawer');
       drawerTask = null; drawerStamp = '';
       if (layer.firstChild) layer.replaceChildren();
       return;
@@ -1297,7 +1477,7 @@
     var notes = h('textarea', { id: 'd-notes', placeholder: 'Деталі, посилання, кроки' });
     notes.value = t.notes;
     notes.addEventListener('input', function () { typed('notes', notes.value); });
-    var due = h('input', { id: 'd-due', type: 'date', value: t.due || '', onchange: function (e) { set('due', e.target.value); } });
+    var due = h('input', { id: 'd-due', type: 'date', value: t.due || '', onchange: function (e) { setDue(t, e.target.value); commit(); } });
     var rep = h('select', { id: 'd-rep', onchange: function (e) { t.repeat = e.target.value; if (t.repeat !== 'none' && !t.due) t.due = today(); commit(); } },
       Object.keys(REPEATS).map(function (k) { return h('option', { value: k, selected: t.repeat === k }, REPEATS[k]); }));
     var list = h('select', { id: 'd-list', onchange: function (e) {
@@ -1312,17 +1492,27 @@
       h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Деталі завдання', onkeydown: function (e) { if (e.key === 'Escape') close(); } },
         h('div', { class: 'drawer-head' },
           h('span', { class: 'crumb' }, parent ? 'Підзавдання: ' + parent.title : ((listOf(t.listId) || {}).name || '')),
-          t.done ? null : h('button', { type: 'button', class: 'icon-btn star' + (t.starred ? ' on' : ''), 'aria-label': 'Зірочка',
-            onclick: function () { set('starred', !t.starred); } }, svg(I.star, 20, 1.8)),
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: close }, svg(I.close, 20))),
         title,
         isShouting(t.title) ? h('button', { type: 'button', class: 'decaps', onclick: function () { set('title', calm(t.title)); } }, 'Аа  Прибрати капс') : null,
+        // матриця й головне на день — двома перемикачами, без окремих полів
+        parent || t.done ? null : h('div', { class: 'd-flags' },
+          h('button', { type: 'button', class: 'flag' + (t.starred ? ' on' : ''), 'aria-pressed': String(t.starred),
+            onclick: function () { set('starred', !t.starred); } }, svg(I.star, 16, 1.8), 'Важливо'),
+          h('button', { type: 'button', class: 'flag' + (isFocus(t) ? ' on' : ''), 'aria-pressed': String(isFocus(t)),
+            onclick: function () { toggleFocus(t); } }, svg(I.target, 16), 'Головне сьогодні'),
+          h('span', { class: 'd-quad' }, 'Матриця: ' + QUADS[quadrant(t)].name.toLowerCase())),
+        parent || t.done ? null : isStuck(t)
+          ? h('div', { class: 'stuck-hint' },
+              h('span', {}, stuckText(t) + '. Схоже, щось заважає.'),
+              h('button', { type: 'button', class: 'btn', onclick: function () { openHelp(t); } }, svg(I.knot, 16), ' Що заважає?'))
+          : h('button', { type: 'button', class: 'quiet-link', onclick: function () { openHelp(t); } }, svg(I.knot, 16), 'Не можу взятися?'),
         h('div', { class: 'field' }, h('label', { for: 'd-notes' }, 'Нотатки'), notes),
         h('div', { class: 'row2' },
           h('div', { class: 'field' }, h('label', { for: 'd-due' }, 'Дата'), due),
           h('div', { class: 'field' }, h('label', { for: 'd-rep' }, 'Повтор'), rep)),
         h('div', { class: 'quick' }, [['Сьогодні', t0], ['Завтра', addDays(t0, 1)], ['Через тиждень', addDays(t0, 7)], ['Без дати', '']].map(function (x) {
-          return h('button', { type: 'button', onclick: function () { set('due', x[1]); } }, x[0]);
+          return h('button', { type: 'button', onclick: function () { setDue(t, x[1]); commit(); } }, x[0]);
         })),
         parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-list' }, 'Список'), list),
         parent ? null : h('div', { class: 'field' }, h('label', { for: 'd-sub' }, 'Підзавдання'),
@@ -1432,7 +1622,7 @@
   function openSheet() {
     var l = ui.view === 'board' ? currentList() : (lists().filter(function (x) { return x.visible; })[0] || lists()[0]);
     if (!l) { toast('Спершу створіть список у меню'); return; }
-    sheet = { listId: l.id, due: ui.view === 'today' ? today() : '', starred: ui.view === 'starred', repeat: 'none' };
+    sheet = { listId: l.id, due: ui.view === 'today' ? today() : '', starred: ui.view === 'starred', repeat: 'none', focus: false };
     pushOverlay('sheet');
     renderSheet();
   }
@@ -1462,7 +1652,12 @@
     var picker = h('input', { type: 'date', class: 'chip-picker', 'aria-label': 'Обрати дату' });
     picker.addEventListener('change', function () { s.due = picker.value; paint(); });
     var bDate = h('label', { class: 'schip' }, svg(I.clock, 16), dateText, picker);
-    var bStar = chip(svg(I.star, 16, 1.8), 'Зірочка', function () { s.starred = !s.starred; paint(); });
+    var bStar = chip(svg(I.star, 16, 1.8), 'Важливо', function () { s.starred = !s.starred; paint(); });
+    var bFocus = chip(svg(I.target, 16), 'Головне', function () {
+      if (!s.focus && focusFull()) return;
+      s.focus = !s.focus;
+      paint();
+    });
     var rep = h('select', { 'aria-label': 'Повтор' }, Object.keys(REPEATS).map(function (k) {
       return h('option', { value: k }, k === 'none' ? 'Без повтору' : REPEATS[k]);
     }));
@@ -1480,6 +1675,7 @@
       dateText.textContent = other ? dueLabel(s.due) : 'Дата';
       picker.value = s.due || '';
       bStar.setAttribute('aria-pressed', String(s.starred));
+      bFocus.setAttribute('aria-pressed', String(s.focus));
       bRep.setAttribute('aria-pressed', String(s.repeat !== 'none'));
       rep.value = s.repeat;
       lsel.value = s.listId;
@@ -1489,8 +1685,9 @@
     function save() {
       var title = input.value.trim();
       if (!title) { input.focus(); return; }
-      addTask(s.listId, title, { due: s.due, starred: s.starred, repeat: s.repeat });
+      addTask(s.listId, title, { due: s.due, starred: s.starred, repeat: s.repeat, focus: s.focus ? today() : '' });
       if (ui.view === 'board' && s.listId !== (currentList() || {}).id) toast('Додано в «' + listOf(s.listId).name + '»');
+      if (s.focus) { s.focus = false; paint(); }    // головне — поштучно, не все підряд
       input.value = '';
       input.focus();
     }
@@ -1499,12 +1696,317 @@
       h('div', { class: 'sheet-scrim', onclick: function () { closeSheet(); } }),
       h('div', { class: 'add-sheet', role: 'dialog', 'aria-label': 'Нове завдання' },
         input,
-        h('div', { class: 'sheet-chips' }, bToday, bTomorrow, bDate, bStar, bRep, bList),
+        h('div', { class: 'sheet-chips' }, bToday, bTomorrow, bDate, bStar, bFocus, bRep, bList),
         h('div', { class: 'sheet-actions' },
           h('button', { type: 'button', class: 'btn', onclick: function () { closeSheet(); } }, 'Закрити'),
           h('button', { type: 'button', class: 'btn primary', onpointerdown: function (e) { e.preventDefault(); }, onclick: save }, 'Додати'))));
     paint();
     input.focus();    // одразу, ще в межах дотику до «+»: тоді телефон відкриває клавіатуру
+  }
+
+  /* ============================================================
+     План на день
+     ============================================================
+
+     Хвилина вранці замість великої системи. Два кроки:
+     1) прострочене — по одному: сьогодні, завтра, через тиждень, без дати,
+        уже зроблено чи відпустити (щоденний огляд у дусі GTD: нічого не висить);
+     2) до трьох головних справ на сьогодні; першими пропонуються вчорашні
+        незроблені головні, потім важливе з матриці.
+     Будь-який крок можна пропустити. */
+
+  var plan = null;   // { step: 'triage' | 'focus', queue: [id], i, picked: {id: true}, all }
+
+  function openPlan(step) {
+    var queue = sorted(tasks().filter(function (t) { return !t.done && !t.parentId && daysLate(t); }), 'date')
+      .map(function (t) { return t.id; });
+    var picked = {};
+    focusToday().forEach(function (t) { if (!t.done) picked[t.id] = true; });
+    plan = { step: step === 'focus' || !queue.length ? 'focus' : 'triage', queue: queue, i: 0, picked: picked, all: false };
+    closeNav();
+    pushOverlay('plan');
+    renderPlan();
+  }
+
+  function closePlan(fromBack) {
+    if (!plan) return;
+    plan = null;
+    $('plan').replaceChildren();
+    if (!fromBack) popOverlay('plan');
+    render();
+  }
+
+  function renderPlan() {
+    var box = $('plan');
+    if (!plan) { box.replaceChildren(); return; }
+    var body = plan.step === 'triage' ? triageStep() : focusStep();
+    // що з простроченого ще не розібрано: туди можна повернутися з другого кроку
+    var left = plan.queue.filter(function (id) { var x = db.tasks[id]; return x && !x.done && daysLate(x); }).length;
+    box.replaceChildren(
+      h('div', { class: 'modal-scrim', onclick: function () { closePlan(); } }),
+      h('div', { class: 'modal plan', role: 'dialog', 'aria-label': 'План на день' },
+        h('div', { class: 'modal-head' },
+          h('div', { class: 'steps' },
+            !plan.queue.length ? null
+              : plan.step === 'triage' ? h('span', { class: 'on' }, '1. Прострочене')
+              : left ? h('button', { type: 'button', onclick: function () { plan.step = 'triage'; plan.i = 0; renderPlan(); } }, '1. Прострочене · ' + left)
+              : h('span', { class: 'past' }, '1. Прострочене'),
+            h('span', { class: plan.step === 'focus' ? 'on' : '' }, (plan.queue.length ? '2. ' : '') + 'Головне')),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: function () { closePlan(); } }, svg(I.close, 20))),
+        body));
+  }
+
+  function triageStep() {
+    // пропускаємо те, що тим часом зробили, видалили чи вже переназначили
+    while (plan.i < plan.queue.length) {
+      var x = db.tasks[plan.queue[plan.i]];
+      if (x && !x.done && daysLate(x)) break;
+      plan.i++;
+    }
+    if (plan.i >= plan.queue.length) { plan.step = 'focus'; return focusStep(); }
+    var t = db.tasks[plan.queue[plan.i]];
+    var t0 = today();
+    var l = listOf(t.listId);
+    function next() { plan.i++; renderPlan(); }
+    function due(v) { return function () { setDue(t, v); commit(); next(); }; }
+    return h('div', { class: 'tri' },
+      h('div', { class: 'modal-title' }, 'Прострочене'),
+      h('div', { class: 'modal-sub' }, (plan.i + 1) + ' з ' + plan.queue.length + '. На кожну справу одне рішення.'),
+      h('div', { class: 'tri-card' },
+        l ? h('span', { class: 'chip list', style: '--c:' + l.color }, l.name) : null,
+        h('div', { class: 'tri-title' }, t.title || 'Без назви'),
+        h('div', { class: 'tri-meta' }, stuckText(t))),
+      h('div', { class: 'tri-actions' },
+        h('button', { type: 'button', class: 'btn primary', onclick: due(t0) }, 'Сьогодні'),
+        h('button', { type: 'button', class: 'btn', onclick: due(addDays(t0, 1)) }, 'Завтра'),
+        h('button', { type: 'button', class: 'btn', onclick: due(addDays(t0, 7)) }, 'Через тиждень'),
+        h('button', { type: 'button', class: 'btn', onclick: due('') }, 'Без дати'),
+        h('button', { type: 'button', class: 'btn', onclick: function () { toggleDone(t); next(); } }, 'Уже зроблено'),
+        h('button', { type: 'button', class: 'btn danger', onclick: function () { removeTask(t); next(); } }, 'Відпустити')),
+      h('div', { class: 'tri-foot' },
+        h('button', { type: 'button', class: 'quiet-link', onclick: function () { openHelp(t); } }, svg(I.knot, 16), 'Що заважає?'),
+        h('button', { type: 'button', class: 'link-btn', onclick: next }, 'Пропустити')));
+  }
+
+  function focusStep() {
+    var t0 = today(), y = addDays(t0, -1);
+    function score(t) {
+      if (plan.picked[t.id]) return 0;
+      if (t.focus === y) return 1;                 // учора було головним, не встигли
+      var q = quadrant(t);
+      return q === 1 ? 2 : q === 2 ? 3 : q === 3 ? 4 : 5;
+    }
+    var cands = tasks().filter(function (t) { return !t.done && !t.parentId; }).sort(function (a, b) {
+      return score(a) - score(b) || (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order;
+    });
+    var shown = plan.all ? cands : cands.slice(0, 7);
+    var n = Object.keys(plan.picked).length;
+    var full = n >= FOCUS_MAX;
+    var insight = blockerInsight();
+    return h('div', { class: 'pick' },
+      h('div', { class: 'modal-title' }, 'Головне на сьогодні'),
+      h('div', { class: 'modal-sub' }, 'Оберіть до трьох. Решту теж можна робити, але ці три зроблять день вдалим.'),
+      insight ? h('div', { class: 'insight' }, insight) : null,
+      cands.length ? h('div', { class: 'cands' }, shown.map(function (t) {
+        var on = !!plan.picked[t.id];
+        var l = listOf(t.listId);
+        return h('button', { type: 'button', class: 'cand' + (on ? ' on' : ''), 'aria-pressed': String(on), disabled: !on && full,
+          onclick: function () { if (on) delete plan.picked[t.id]; else plan.picked[t.id] = true; renderPlan(); } },
+          h('span', { class: 'cand-mark' }, svg(I.target, 18)),
+          h('span', { class: 'cand-body' },
+            h('span', { class: 'cand-title' }, t.title || 'Без назви'),
+            h('span', { class: 'cand-meta' },
+              (t.focus === y ? 'учора було головним · ' : '') + QUADS[quadrant(t)].name.toLowerCase() +
+              (t.due ? ' · ' + dueLabel(t.due).toLowerCase() : '') + (l ? ' · ' + l.name : ''))));
+      })) : h('div', { class: 'empty' }, 'Відкритих справ немає. Можна просто жити.'),
+      cands.length > shown.length ? h('button', { type: 'button', class: 'more', onclick: function () { plan.all = true; renderPlan(); } },
+        'Показати всі ' + cands.length) : null,
+      h('div', { class: 'modal-foot' },
+        h('span', { class: 'pick-count' }, n + ' з ' + FOCUS_MAX),
+        h('button', { type: 'button', class: 'btn primary', onclick: applyFocus }, n ? 'Готово' : 'Сьогодні без головного')));
+  }
+
+  function applyFocus() {
+    var t0 = today(), n = 0;
+    tasks().forEach(function (t) {
+      if (t.parentId || t.done) return;
+      if (plan.picked[t.id]) { t.focus = t0; n++; }
+      else if (t.focus === t0) t.focus = '';
+    });
+    if (!n) { ui.planSkip = t0; saveUi(); }
+    commit();
+    closePlan();
+    toast(n ? 'План готовий: ' + n + ' ' + (n === 1 ? 'головна справа' : 'головні справи') + ' на сьогодні.' : 'Добре, сьогодні без головного.');
+  }
+
+  /** Що найчастіше заважало за тиждень: свій «улюблений» патерн краще знати в обличчя. */
+  function blockerInsight() {
+    var from = addDays(today(), -7), count = {};
+    tasks().forEach(function (t) { if (t.blocker && t.blockerAt >= from) count[t.blocker] = (count[t.blocker] || 0) + 1; });
+    var top = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })[0];
+    if (!top || count[top] < 2) return null;
+    return 'Цього тижня найчастіше заважала думка «' + BLOCKERS[top].thought + '» (' + count[top] + '). Це ' +
+      BLOCKERS[top].name.charAt(0).toLowerCase() + BLOCKERS[top].name.slice(1) + '.';
+  }
+
+  /* ============================================================
+     Що заважає?
+     ============================================================
+
+     Оберіть думку, що зупиняє, — побачите її назву (когнітивне викривлення),
+     коротке переформулювання й одну дію: записати перший крок, сказати собі
+     «навіщо» або почати на дві хвилини. Обране запам'ятовується в завданні,
+     щоб «План на день» міг показати, що заважає найчастіше. */
+
+  var help = null;   // { id, key }
+
+  function openHelp(t) {
+    help = { id: t.id, key: '' };
+    pushOverlay('help');
+    renderHelp();
+  }
+
+  function closeHelp(fromBack) {
+    if (!help) return;
+    help = null;
+    $('help').replaceChildren();
+    if (!fromBack) popOverlay('help');
+  }
+
+  function renderHelp() {
+    var box = $('help');
+    var t = help && db.tasks[help.id];
+    if (!t) { closeHelp(); return; }
+    var body;
+    if (!help.key) {
+      body = [
+        h('div', { class: 'modal-title' }, 'Що заважає?'),
+        h('div', { class: 'modal-sub' }, 'Яка думка зупиняє, коли беретеся за «' + (t.title || 'цю справу') + '»?'),
+        h('div', { class: 'thoughts' }, BLOCKER_ORDER.map(function (k) {
+          return h('button', { type: 'button', class: 'thought', onclick: function () {
+            help.key = k;
+            t.blocker = k;
+            t.blockerAt = today();
+            commit();
+            renderHelp();
+          } }, '«' + BLOCKERS[k].thought + '»');
+        }))
+      ];
+    } else {
+      var b = BLOCKERS[help.key];
+      body = [
+        h('button', { type: 'button', class: 'link-btn back', onclick: function () { help.key = ''; renderHelp(); } }, '← Інша думка'),
+        h('div', { class: 'thought-quote' }, '«' + b.thought + '»'),
+        h('div', { class: 'distortion' }, b.name),
+        h('p', { class: 'reframe' }, b.reframe),
+        helpAction(t, b)
+      ];
+    }
+    box.replaceChildren(
+      h('div', { class: 'modal-scrim', onclick: function () { closeHelp(); } }),
+      h('div', { class: 'modal help', role: 'dialog', 'aria-label': 'Що заважає?' },
+        h('div', { class: 'modal-head' },
+          h('span', { class: 'steps' }, h('span', { class: 'on' }, 'Що заважає')),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: function () { closeHelp(); } }, svg(I.close, 20))),
+        body));
+  }
+
+  function helpAction(t, b) {
+    if (b.act === 'kick') {
+      return h('div', { class: 'help-act' },
+        h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(t); } }, svg(I.play, 16), ' Почати на 2 хвилини'),
+        h('button', { type: 'button', class: 'link-btn', onclick: function () { help.key = 'unclear'; renderHelp(); } }, 'Або записати перший крок'));
+    }
+    var why = b.act === 'why';
+    var input = h('input', { class: 'help-input', autocomplete: 'off', enterkeyhint: 'done',
+      placeholder: why ? 'бо…' : 'Напр.: відкрити підручник на 5-й сторінці',
+      'aria-label': why ? 'Навіщо це мені' : 'Перший крок' });
+    function save() {
+      var v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      if (why) {
+        t.notes = (t.notes ? t.notes + '\n' : '') + 'Навіщо: ' + v;
+        commit();
+        toast('Записано в нотатки: тепер видно, навіщо це.');
+      } else {
+        var max = 0;
+        childrenOf(t.id).forEach(function (c) { if (c.order > max) max = c.order; });
+        addTask(t.listId, v, { parentId: t.id, order: max + 1, starred: false, due: '' });
+        toast('Перший крок записано.');
+      }
+      closeHelp();
+    }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    setTimeout(function () { input.focus(); }, 30);
+    return h('div', { class: 'help-act' },
+      input,
+      h('div', { class: 'help-row' },
+        h('button', { type: 'button', class: 'btn primary', onclick: save }, why ? 'Записати' : 'Додати перший крок'),
+        h('button', { type: 'button', class: 'link-btn', onclick: function () { startKick(t); } }, 'Почати на 2 хвилини')));
+  }
+
+  /* ============================================================
+     Дві хвилини
+     ============================================================
+
+     Правило двох хвилин: найважче — почати. Таймер не вимагає закінчити,
+     лише почати; потім можна спокійно зупинитися або продовжити. */
+
+  var kick = null;   // { id, end, iv }
+  var KICK_MS = 2 * 60 * 1000;
+
+  function startKick(t) {
+    // «Що заважає?» змінюється таймером у межах того самого кроку історії
+    if (help && swapOverlay('help', 'kick')) { help = null; $('help').replaceChildren(); }
+    else pushOverlay('kick');
+    if (kick) clearInterval(kick.iv);
+    kick = { id: t.id, end: Date.now() + KICK_MS, iv: null };
+    renderKick();
+  }
+
+  function closeKick(fromBack) {
+    if (!kick) return;
+    clearInterval(kick.iv);
+    kick = null;
+    $('kick').replaceChildren();
+    if (!fromBack) popOverlay('kick');
+  }
+
+  function renderKick() {
+    var box = $('kick');
+    var t = kick && db.tasks[kick.id];
+    if (!t) { closeKick(); return; }
+    clearInterval(kick.iv);
+    var finished = Date.now() >= kick.end;
+    var time = h('div', { class: 'kick-time', role: 'timer' });
+    box.replaceChildren(
+      h('div', { class: 'modal-scrim' }),
+      h('div', { class: 'modal kick', role: 'dialog', 'aria-label': 'Дві хвилини' },
+        h('div', { class: 'kick-task' }, t.title || 'Без назви'),
+        finished ? [
+          h('div', { class: 'kick-done' }, 'Ви почали. Це найважче.'),
+          h('div', { class: 'modal-sub' }, 'Можна зупинитися з чистою совістю або продовжити, поки йде.'),
+          h('div', { class: 'help-row center' },
+            h('button', { type: 'button', class: 'btn primary', onclick: function () { if (!t.done) toggleDone(t); closeKick(); } }, 'Зроблено'),
+            h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Продовжу далі'))
+        ] : [
+          time,
+          h('div', { class: 'modal-sub' }, 'Лише дві хвилини, без вимоги закінчити.'),
+          h('button', { type: 'button', class: 'btn', onclick: function () { closeKick(); } }, 'Зупинити')
+        ]));
+    if (finished) return;
+    function tick() {
+      if (!kick) return;
+      var left = Math.max(0, kick.end - Date.now());
+      var s = Math.ceil(left / 1000);
+      time.textContent = Math.floor(s / 60) + ':' + pad(s % 60);
+      if (!left) {
+        if (navigator.vibrate) { try { navigator.vibrate([120, 80, 120]); } catch (e) {} }
+        renderKick();
+      }
+    }
+    tick();
+    kick.iv = setInterval(tick, 250);
   }
 
   $('fab').addEventListener('click', openSheet);
@@ -1529,8 +2031,13 @@
     var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
     if (!l) { toast('Спершу створіть список у меню ліворуч'); return; }
     var t = addTask(l.id, '', ui.view === 'today' ? { due: today() } : {});
-    closeNav(true);     // меню змінюється карткою в межах того самого кроку історії
-    openDrawer(t.id);
+    if ($('app').classList.contains('nav-open')) {
+      // меню змінюється карткою в межах того самого кроку історії
+      $('app').classList.remove('nav-open');
+      swapOverlay('nav', 'drawer');
+      drawerTask = t.id;
+      render();
+    } else openDrawer(t.id);
   });
   $('newListForm').addEventListener('submit', function (e) {
     e.preventDefault();
