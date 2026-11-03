@@ -844,6 +844,16 @@
       el.classList.remove('drop-before', 'drop-after', 'drop-col');
     });
   }
+  /** Поставити список на місце to серед решти (0 — перший). Одне місце, де вирішується порядок списків. */
+  function placeList(l, to) {
+    var arr = lists().filter(function (x) { return x !== l; });
+    arr.splice(Math.max(0, Math.min(arr.length, to)), 0, l);
+    arr.forEach(function (x, i) { x.order = i; });
+    commit();
+  }
+
+  var listDragId = null;   // список, який тягнуть у меню ліворуч
+
   function moveTask(id, listId, refId, after) {
     var t = db.tasks[id];
     if (!t || id === refId) return;
@@ -1040,13 +1050,33 @@
     }));
     var cur = mobileMq.matches && ui.view === 'board' ? currentList() : null;
     $('lists').replaceChildren.apply($('lists'), lists().map(function (l) {
-      return h('div', { class: 'list-row', style: '--c:' + l.color, 'aria-current': String(l === cur) },
+      // на комп'ютері списки можна перетягувати, щоб змінити їхній порядок
+      var row = h('div', { class: 'list-row', style: '--c:' + l.color, 'aria-current': String(l === cur),
+        draggable: hoverMq.matches ? null : 'true',
+        ondragstart: function (e) { listDragId = l.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', l.id); },
+        ondragend: function () { listDragId = null; clearDrop(); },
+        ondragover: function (e) {
+          if (!listDragId || listDragId === l.id) return;
+          e.preventDefault(); clearDrop();
+          var r = row.getBoundingClientRect();
+          row.classList.add(e.clientY > r.top + r.height / 2 ? 'drop-after' : 'drop-before');
+        },
+        ondrop: function (e) {
+          var moving = listDragId && db.lists[listDragId];
+          if (!moving || moving === l) return;
+          e.preventDefault();
+          var after = row.classList.contains('drop-after');
+          clearDrop(); listDragId = null;
+          var rest = lists().filter(function (x) { return x !== moving; });
+          placeList(moving, rest.indexOf(l) + (after ? 1 : 0));
+        } },
         h('button', { type: 'button', class: 'dot', role: 'switch', 'aria-checked': String(l.visible),
           'aria-label': (l.visible ? 'Сховати з дошки «' : 'Показати на дошці «') + l.name + '»',
           title: l.visible ? 'Сховати з дошки' : 'Показати на дошці',
           onclick: function () { l.visible = !l.visible; commit(); } }),
         h('button', { type: 'button', class: 'name', onclick: function () { showList(l); } }, l.name),
         h('span', { class: 'count' }, openCount(l.id) || ''));
+      return row;
     }));
     $('themes').replaceChildren.apply($('themes'), [['auto', 'Авто'], ['dark', 'Темна'], ['light', 'Світла']].map(function (x) {
       return h('button', { type: 'button', 'aria-pressed': String(ui.theme === x[0]), onclick: function () { ui.theme = x[0]; saveUi(); render(); } }, x[1]);
@@ -1391,6 +1421,7 @@
         onclick: function (e) { e.stopPropagation(); openMenu = open ? null : l.id; armed = null; render(); } }, svg(I.dots, 20)));
     if (!open) return wrap;
     var doneList = tasks().filter(function (t) { return t.listId === l.id && t.done; });
+    var all = lists(), at = all.indexOf(l);
     var loud = tasks().filter(function (t) { return t.listId === l.id && isShouting(t.title); });
     wrap.append(h('div', { class: 'menu', onclick: function (e) { e.stopPropagation(); } },
       h('div', { class: 'menu-label' }, 'Сортування'),
@@ -1406,6 +1437,8 @@
       })),
       h('hr'),
       h('button', { type: 'button', onclick: function () { openMenu = null; renameList = l.id; render(); } }, 'Перейменувати'),
+      at > 0 ? h('button', { type: 'button', onclick: function () { openMenu = null; placeList(l, at - 1); } }, '↑ Вище') : null,
+      at < all.length - 1 ? h('button', { type: 'button', onclick: function () { openMenu = null; placeList(l, at + 1); } }, '↓ Нижче') : null,
       loud.length ? h('button', { type: 'button', onclick: function () {
         var was = loud.map(function (t) { return [t, t.title]; });
         loud.forEach(function (t) { t.title = calm(t.title); });
