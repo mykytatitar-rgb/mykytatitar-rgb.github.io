@@ -1368,6 +1368,8 @@
     var phone = mobileMq.matches;
     var canDrag = !phone && !hoverMq.matches;
     var top = sorted(tasks().filter(function (t) { return t.listId === l.id && isOpenNow(t); }), mode);
+    // важливе (із зірочкою) завжди вгорі списку; всередині кожної групи — обраний порядок
+    top = top.filter(function (t) { return t.starred; }).concat(top.filter(function (t) { return !t.starred; }));
     // справи на майбутнє сховані, доки не настане їхній день; знайти їх можна тут, згорнутими
     var later = sorted(tasks().filter(function (t) { return t.listId === l.id && !t.parentId && !t.done && isFuture(t); }), 'date');
     ui.openFuture = ui.openFuture || {};
