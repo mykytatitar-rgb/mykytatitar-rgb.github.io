@@ -109,6 +109,7 @@
   function addDays(s, n) { var d = parseDay(s); d.setDate(d.getDate() + n); return iso(d); }
   function today() { return iso(new Date()); }
   function isDay(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+  function isTime(s) { return typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s); }
 
   function dueLabel(s) {
     var diff = Math.round((parseDay(s) - parseDay(today())) / 864e5);
@@ -195,6 +196,7 @@
     knot: '<path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5H4.5z"/><path d="M10 9.2a2 2 0 113.2 1.6c-.8.5-1.2.9-1.2 1.7"/><circle cx="12" cy="14.2" r=".5" fill="currentColor"/>',
     play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
+    cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>',
     lang: '<path d="M3.5 5.5h9M8 3.5v2M5 5.5c.9 3.2 3.2 5.6 6.5 7M11 5.5c-.9 3.2-3.2 5.6-6.5 7"/><path d="M13 20.5l4-9 4 9M14.5 17.5h5"/>',
     hourglass: '<path d="M7 3.5h10M7 20.5h10"/><path d="M8 3.5c0 4.2 4 5.3 4 8.5s-4 4.3-4 8.5M16 3.5c0 4.2-4 5.3-4 8.5s4 4.3 4 8.5"/>'
@@ -233,6 +235,9 @@
       postponed: Math.max(0, Math.floor(Number(o.postponed) || 0)),   // скільки разів прострочене переносили далі
       blocker: BLOCKERS[o.blocker] ? o.blocker : '',     // що заважало востаннє («Що заважає?»)
       blockerAt: isDay(o.blockerAt) ? o.blockerAt : '',
+      start: isTime(o.start) ? o.start : '',             // час у календарі; без нього — «весь день»
+      end: isTime(o.start) && isTime(o.end) && o.end > o.start ? o.end : '',
+      color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : '',   // колір події; порожньо — колір списку
       est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0)))   // скільки хвилин займе, 0 — не оцінено
     };
   }
@@ -895,6 +900,7 @@
     var root = document.documentElement;
     root.style.setProperty('--fs', ui.size + 'px');
     if (ui.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', ui.theme);
+    $('app').classList.toggle('view-cal', ui.view === 'calendar');
     renderSide(); renderHead(); renderTop(); renderNav(); renderBoard(); renderDrawer();
   }
 
@@ -938,13 +944,14 @@
     else if (kind === 'plan') closePlan();
     else if (kind === 'help') closeHelp();
     else if (kind === 'kick') closeKick();
+    else if (kind === 'calform') window.SpravyCal.closeForm();
   }
   /** Закрити всі вікна разом і прибрати їхні кроки з історії одним стрибком. */
   function closeOverlays() {
     var n = overlays.length;
     if (!n) return;
     overlays = [];
-    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true);
+    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true);
     if (drawerTask) closeDrawer(true);
     skipPops++;
     try { history.go(-n); } catch (e) { skipPops--; }
@@ -965,6 +972,7 @@
     else if (kind === 'plan') closePlan(true);
     else if (kind === 'help') closeHelp(true);
     else if (kind === 'kick') closeKick(true);
+    else if (kind === 'calform') window.SpravyCal.closeForm(true);
   });
 
   /* ---------- шапка й нижня панель телефона ---------- */
@@ -1016,7 +1024,8 @@
       ['now', 'Зараз', I.bolt, 0],
       ['board', 'Списки', I.list, 0],
       ['today', 'Сьогодні', I.sun, due.length],
-      ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length]
+      ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length],
+      ['calendar', 'Календар', I.cal, 0]
     ];
     $('bnav').replaceChildren.apply($('bnav'), items.map(function (x) {
       return h('button', { type: 'button', 'aria-current': String(ui.view === x[0]),
@@ -1043,6 +1052,7 @@
       ['board', 'Усі списки', I.list, open.length],
       ['today', 'Сьогодні', I.sun, open.filter(function (t) { return t.due && t.due <= t0; }).length],
       ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length],
+      ['calendar', 'Календар', I.cal, 0],
       ['starred', 'Важливі', I.star, open.filter(function (t) { return t.starred; }).length]
     ];
     $('views').replaceChildren.apply($('views'), views.map(function (v) {
@@ -1123,7 +1133,7 @@
     if (isStuck(t)) out.push(h('span', { class: 'chip stuck', title: stuckText(t) }, 'застрягло'));
     if (t.due) {
       var late = !t.done && t.due < today(), now = t.due === today();
-      out.push(h('span', { class: 'chip' + (late ? ' late' : now ? ' today' : '') }, svg(I.clock, 14), dueLabel(t.due), t.repeat !== 'none' ? svg(I.repeat, 14) : null));
+      out.push(h('span', { class: 'chip' + (late ? ' late' : now ? ' today' : '') }, svg(I.clock, 14), dueLabel(t.due) + (t.start ? ' ' + t.start : ''), t.repeat !== 'none' ? svg(I.repeat, 14) : null));
     } else if (t.repeat !== 'none') {
       out.push(h('span', { class: 'chip' }, svg(I.repeat, 14), REPEATS[t.repeat]));
     }
@@ -1524,6 +1534,7 @@
       });
       return;
     }
+    if (ui.view === 'calendar') { window.SpravyCal.render(b, calApi); return; }
     if (ui.view === 'now') { renderNow(b); return; }
     if (ui.view === 'matrix') { renderMatrix(b); return; }
     if (ui.view === 'today') { renderToday(b); return; }
@@ -1732,6 +1743,9 @@
 
     function close() { closeDrawer(false); }
     function set(k, v) { t[k] = v; commit(); }
+    // час події: кінець завжди після початку; час без дати ставить подію на сьогодні
+    function times(s, e) { var x = window.SpravyCal.normTimes(s, e); t.start = x.start; t.end = x.end; if (t.start && !t.due) t.due = today(); commit(); }
+    function timeIn(id, v, fn) { return h('input', { id: id, type: 'time', step: '900', value: v, onchange: function (e) { fn(e.target.value); } }); }
     function typed(k, v) { t[k] = v; quiet = true; commit(); quiet = false; drawerStamp = stampOf(t); }
 
     var parent = t.parentId && db.tasks[t.parentId];
@@ -1788,6 +1802,14 @@
         h('div', { class: 'row2' },
           h('div', { class: 'field' }, h('label', { for: 'd-due' }, 'Дата'), due),
           h('div', { class: 'field' }, h('label', { for: 'd-rep' }, 'Повтор'), rep)),
+        parent ? null : h('div', { class: 'row2' },
+          h('div', { class: 'field' }, h('label', { for: 'd-start' }, 'Початок'), timeIn('d-start', t.start, function (v) { times(v, t.end); })),
+          h('div', { class: 'field' }, h('label', { for: 'd-end' }, 'Кінець'), timeIn('d-end', t.end, function (v) { times(t.start, v); }))),
+        parent ? null : h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Колір у календарі'),
+          h('div', { class: 'swatches' }, COLORS.map(function (c) {
+            return h('button', { type: 'button', class: 'swatch', style: '--c:' + c, 'aria-label': 'Колір', 'aria-pressed': String(calApi.colorOf(t) === c),
+              onclick: function () { set('color', c); } });
+          }))),
         h('div', { class: 'quick' }, [['Сьогодні', t0], ['Завтра', addDays(t0, 1)], ['Через тиждень', addDays(t0, 7)], ['Без дати', '']].map(function (x) {
           return h('button', { type: 'button', onclick: function () { setDue(t, x[1]); commit(); } }, x[0]);
         })),
@@ -1803,7 +1825,7 @@
           delBtn,
           h('div', {},
             h('button', { type: 'button', class: 'btn', onclick: function () { toggleDone(t); } }, t.done ? 'Повернути' : 'Виконано'),
-            h('button', { type: 'button', class: 'btn primary', onclick: close }, 'Готово')))));
+            h('button', { type: 'button', class: 'btn primary', onclick: close }, 'Зберегти')))));
 
     var f = focusId && $(focusId);
     if (f) {
@@ -2420,6 +2442,25 @@
   /* ============================================================
      Голос і переклад (саму роботу з мовами робить lingo.js)
      ============================================================ */
+
+  /* Календар (calendar.js) читає й пише ті самі завдання лише через цей api */
+  var calApi = {
+    h: h, ui: function () { return ui; }, saveUi: saveUi, today: today,
+    mobile: function () { return mobileMq.matches; },
+    colors: COLORS,
+    tasks: function () { return tasks().filter(function (t) { return !t.parentId && t.due; }); },
+    task: function (id) { return db.tasks[id]; },
+    colorOf: function (t) { return t.color || (listOf(t.listId) || {}).color || COLORS[0]; },
+    defaultColor: function () { var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0]; return (l && l.color) || COLORS[0]; },
+    open: function (id) { openDrawer(id); },
+    save: function () { commit(); },
+    create: function (f) {
+      var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
+      if (!l) { toast('Спершу створіть список у меню ліворуч'); return; }
+      addTask(l.id, f.title, { due: f.due, start: f.start, end: f.end, color: f.color, starred: false });
+    },
+    pushOverlay: pushOverlay, popOverlay: popOverlay
+  };
 
   var VOICE = ['uk', 'en', 'es'];
 

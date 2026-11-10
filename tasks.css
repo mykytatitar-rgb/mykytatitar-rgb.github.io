@@ -461,6 +461,65 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .tip-row b { flex: none; font-size: .72rem; letter-spacing: .05em; opacity: .7; }
 .tip-row.muted, .tip-err { opacity: .75; }
 
+/* ---------- календар ---------- */
+.cal { flex: 1; align-self: stretch; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: 1.25rem; overflow: hidden; }
+.cal-bar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .8rem 1rem; border-bottom: 1px solid var(--line); }
+.cal-bar .btn { padding: .4rem .9rem; }
+.cal-prev, .cal-next { font-size: 1.5rem; line-height: 1; }
+.cal-title { flex: 1; min-width: 10rem; margin: 0 .3rem; font-family: var(--font-display); font-weight: 600; font-size: 1.2rem; }
+.cal-head, .cal-allday, .cal-grid { display: grid; }
+.cal-head, .cal-allday { overflow: hidden; scrollbar-gutter: stable; flex: none; }
+.cal-dayhead { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .45rem 0 .3rem; color: var(--muted); }
+.cal-dayhead .dow { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; }
+.dnum { width: 2.2rem; height: 2.2rem; border-radius: 50%; font-size: 1.15rem; font-weight: 500; color: var(--fg); }
+.dnum:hover { background: var(--surface-2); }
+.today > .dnum, .cal-dayhead.today .dnum { background: var(--accent); color: var(--accent-ink); }
+.cal-dayhead.today .dow { color: var(--accent); font-weight: 600; }
+.cal-allday { border-bottom: 1px solid var(--line); min-height: 1.9rem; }
+.cal-allday .gut { font-size: .68rem; color: var(--faint); text-align: right; padding: .35rem .4rem 0 0; }
+.cal-allday .cell { border-left: 1px solid var(--line); padding: .15rem; display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.cal-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.cal-grid { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.cal-hours { position: relative; }
+.cal-hours span { position: absolute; right: .45rem; transform: translateY(-50%); font-size: .7rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+.cal-col { position: relative; border-left: 1px solid var(--line); cursor: cell;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px); background-size: 100% 48px; }
+.ev {
+  display: block; text-align: left; min-width: 0; overflow: hidden; border-radius: .45rem; padding: .1rem .4rem; font-size: .8rem; line-height: 1.25;
+  background: color-mix(in srgb, var(--c) 30%, var(--surface)); border-left: 3px solid var(--c); color: var(--fg); cursor: pointer;
+  white-space: nowrap; text-overflow: ellipsis;
+}
+.ev.done { opacity: .55; text-decoration: line-through; }
+.cal-col .ev { position: absolute; white-space: normal; display: flex; flex-direction: column; box-shadow: 0 0 0 1px var(--surface); }
+.cal-col .ev-title { font-weight: 600; overflow: hidden; }
+.cal-col .ev-time { font-size: .72rem; color: var(--muted); }
+.ev-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; }
+.ev.dragging { opacity: .85; box-shadow: var(--shadow); z-index: 3; }
+.ev.ghost { opacity: .7; border-style: dashed; pointer-events: none; z-index: 2; }
+.now-line { position: absolute; left: -1px; right: 0; height: 2px; background: #e5484d; z-index: 4; pointer-events: none; }
+.now-line::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; }
+.cal-month { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto repeat(6, minmax(0, 1fr)); overflow-y: auto; }
+.mhead { padding: .4rem; text-align: center; font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.cal-month .cell { min-width: 0; min-height: 6.2rem; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: .2rem .25rem; display: flex; flex-direction: column; gap: .15rem; cursor: cell; }
+.cal-month .cell:nth-child(7n + 1) { border-left: 0; }
+.cal-month .cell.out { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+.cal-month .cell.out .dnum { color: var(--faint); }
+.cal-month .dnum { align-self: center; width: 1.8rem; height: 1.8rem; font-size: .9rem; }
+.more-ev { align-self: flex-start; font-size: .78rem; color: var(--muted); padding: 0 .3rem; border-radius: .4rem; }
+.more-ev:hover { background: var(--surface-2); color: var(--fg); }
+.calform-layer { position: fixed; inset: 0; z-index: 36; }
+.calform-scrim { position: absolute; inset: 0; }
+.calform {
+  position: absolute; width: min(22rem, calc(100vw - 16px)); background: var(--surface); border-radius: 1rem; box-shadow: var(--shadow);
+  padding: 1rem; display: flex; flex-direction: column; gap: .7rem; border: 1px solid var(--line);
+}
+.calform-title { font-size: 1.1rem; background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: .25rem 0 .45rem; }
+.calform-title:focus { outline: none; border-color: var(--accent); }
+.calform-when { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; color: var(--muted); font-size: .9rem; }
+.calform-when input { background: var(--surface-2); border: 1px solid var(--line); border-radius: .5rem; padding: .25rem .4rem; }
+.calform .swatches, .drawer .swatches { padding: .1rem 0; }
+.calform-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+
 /* ---------- телефон ---------- */
 .bnav, .fab { display: none; }
 
@@ -588,5 +647,18 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   .now-actions { align-self: stretch; }
   .now-actions .btn { flex: 1; }
   .now-next { margin-left: .9rem; }
-  .bnav button { font-size: .72rem; }
+  .bnav button { font-size: .7rem; }
+  .bn-ico { width: 3rem; }
+  /* календар на телефоні: займає екран між шапкою й нижньою панеллю, гортається сам */
+  .view-cal .fab { display: none; }
+  .view-cal .board { padding-bottom: 0; }
+  .cal { height: calc(100dvh - 8.4rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); border-radius: 0; background: transparent; }
+  .cal-bar { padding: .5rem .55rem; gap: .3rem; }
+  .cal-title { order: -1; flex-basis: 100%; margin: 0 .2rem .1rem; font-size: 1.05rem; }
+  .cal-views { margin-left: auto; }
+  .cal-month .cell { min-height: 4.2rem; }
+  .cal-month .ev .ev-time { display: none; }
+  .calform { left: 0 !important; right: 0; bottom: 0; top: auto !important; width: 100%; border-radius: 1.4rem 1.4rem 0 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+  .calform-scrim { background: rgba(0, 0, 0, .35); }
 }
