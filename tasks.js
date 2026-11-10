@@ -195,6 +195,8 @@
     knot: '<path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5H4.5z"/><path d="M10 9.2a2 2 0 113.2 1.6c-.8.5-1.2.9-1.2 1.7"/><circle cx="12" cy="14.2" r=".5" fill="currentColor"/>',
     play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
+    mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>',
+    lang: '<path d="M3.5 5.5h9M8 3.5v2M5 5.5c.9 3.2 3.2 5.6 6.5 7M11 5.5c-.9 3.2-3.2 5.6-6.5 7"/><path d="M13 20.5l4-9 4 9M14.5 17.5h5"/>',
     hourglass: '<path d="M7 3.5h10M7 20.5h10"/><path d="M8 3.5c0 4.2 4 5.3 4 8.5s-4 4.3-4 8.5M16 3.5c0 4.2-4 5.3-4 8.5s4 4.3 4 8.5"/>'
   };
   function svg(d, size, sw) {
@@ -1195,9 +1197,11 @@
         setTimeout(function () { toggleDone(t); }, 420);
       } }),
       h('button', { type: 'button', class: 'task-body', onclick: function () { openDrawer(t.id); } },
-        h('span', { class: 'task-title' }, t.title || 'Без назви'),
+        h('span', { class: 'task-title', onmouseenter: function (e) { tipHover(t, e.currentTarget); }, onmouseleave: tipLeave }, t.title || 'Без назви'),
         t.notes && !t.done ? h('span', { class: 'task-notes' }, t.notes) : null,
         chipsFor(t, !!opts.showList)),
+      t.title ? h('button', { type: 'button', class: 'tr-btn', 'aria-label': 'Переклад', title: 'Переклад',
+        onclick: function (e) { e.stopPropagation(); tipToggle(t, e.currentTarget); } }, svg(I.lang, 17, 1.7)) : null,
       opts.sub || t.done ? null : h('button', { type: 'button', class: 'star' + (t.starred ? ' on' : ''), 'aria-label': t.starred ? 'Прибрати зірочку' : 'Додати зірочку',
         onclick: function () { t.starred = !t.starred; commit(); } }, svg(I.star, 19, 1.8)));
     if (opts.touch === false || !mobileMq.matches) return row;
@@ -1355,7 +1359,7 @@
         } });
       input.value = addDraft;
       requestAnimationFrame(function () { if (document.activeElement !== input) input.focus(); });
-      return h('div', { class: 'add-input' }, svg(I.addTask, 22, 1.8), input);
+      return h('div', { class: 'add-input' }, svg(I.addTask, 22, 1.8), input, micFor(input));
     }
     return h('button', { type: 'button', class: 'add-row', onclick: function () { addingIn = key; addDraft = ''; render(); } }, svg(I.addTask, 22, 1.8), 'Додати завдання');
   }
@@ -1974,7 +1978,7 @@
     box.replaceChildren(
       h('div', { class: 'sheet-scrim', onclick: function () { closeSheet(); } }),
       h('div', { class: 'add-sheet', role: 'dialog', 'aria-label': 'Нове завдання' },
-        input,
+        h('div', { class: 'sheet-row' }, input, micFor(input)),
         h('div', { class: 'sheet-chips' }, bToday, bTomorrow, bDate, bStar, bFocus, bRep, bList),
         h('div', { class: 'sheet-actions' },
           h('button', { type: 'button', class: 'btn', onclick: function () { closeSheet(); } }, 'Закрити'),
@@ -2413,6 +2417,88 @@
     kick.iv = setInterval(tick, 250);
   }
 
+  /* ============================================================
+     Голос і переклад (саму роботу з мовами робить lingo.js)
+     ============================================================ */
+
+  var VOICE = ['uk', 'en', 'es'];
+
+  /** Мікрофон і перемикач мови біля поля. Розпізнане йде в поле, щоб його можна було виправити. */
+  function micFor(input) {
+    var L = window.SpravyLingo;
+    if (!L || !L.canListen) return null;     // браузер не вміє — кнопки немає
+    var lang = VOICE.indexOf(ui.voiceLang) >= 0 ? ui.voiceLang : 'uk';
+    function keep(e) { e.preventDefault(); } // фокус лишається в полі: клавіатура не ховається, поле не закривається
+    var langBtn = h('button', { type: 'button', class: 'mic-lang', title: 'Мова диктування: UA / EN / ES', onpointerdown: keep, onmousedown: keep,
+      onclick: function () { lang = VOICE[(VOICE.indexOf(lang) + 1) % VOICE.length]; ui.voiceLang = lang; saveUi(); langBtn.textContent = L.NAMES[lang]; } },
+      L.NAMES[lang]);
+    var base = '';
+    var mic = h('button', { type: 'button', class: 'mic', 'aria-label': 'Надиктувати', title: 'Надиктувати', onpointerdown: keep, onmousedown: keep,
+      onclick: function () {
+        base = input.value.trim();
+        L.listen(lang, function (text) {
+          input.value = (base ? base + ' ' : '') + text;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }, function (on, err) {
+          mic.classList.toggle('rec', on);
+          mic.setAttribute('aria-pressed', String(on));
+          if (err === 'not-allowed' || err === 'service-not-allowed') toast('Немає дозволу на мікрофон: дозвольте його в налаштуваннях сайту.');
+          else if (err && err !== 'aborted' && err !== 'no-speech') toast('Не вдалося розпізнати мовлення. Спробуйте ще раз.');
+          if (!on && input.isConnected) input.focus();
+        });
+      } }, svg(I.mic, 18));
+    return h('span', { class: 'voice' }, mic, langBtn);
+  }
+
+  /* Підказка з перекладом. На комп'ютері — після короткої затримки наведення
+     на назву (не на кожен рух мишки), на телефоні — тапом по значку. */
+  var TIP_DELAY = 600;
+  var tip = { id: null, mode: '', timer: null };
+
+  function tipHover(t, anchor) {
+    if (hoverMq.matches || !t.title) return;
+    clearTimeout(tip.timer);
+    tip.timer = setTimeout(function () { showTip(t, anchor, 'hover'); }, TIP_DELAY);
+  }
+  function tipLeave() {
+    clearTimeout(tip.timer);
+    if (tip.mode === 'hover') hideTip();
+  }
+  function tipToggle(t, anchor) {
+    if (tip.id === t.id && tip.mode === 'click') hideTip(); else showTip(t, anchor, 'click');
+  }
+  function hideTip() {
+    clearTimeout(tip.timer);
+    tip.id = null; tip.mode = '';
+    $('tip').hidden = true;
+  }
+  function showTip(t, anchor, mode) {
+    var L = window.SpravyLingo;
+    if (!L || !anchor.isConnected) return;
+    var box = $('tip'), id = t.id;
+    tip.id = id; tip.mode = mode;
+    function paint(items) {
+      if (tip.id !== id) return;             // поки чекали, мишка вже на іншому
+      box.replaceChildren.apply(box, items ? items.map(function (x) {
+        return h('div', { class: 'tip-row' }, h('b', {}, L.NAMES[x.lang]),
+          x.error ? h('span', { class: 'tip-err' }, 'Не вдалося перекласти: ' + x.error + '.') : h('span', {}, x.text));
+      }) : [h('div', { class: 'tip-row muted' }, 'Перекладаю…')]);
+      box.hidden = false;
+      var r = anchor.getBoundingClientRect(), w = box.offsetWidth, hgt = box.offsetHeight;
+      var top = r.bottom + 6 + hgt > innerHeight ? r.top - 6 - hgt : r.bottom + 6;
+      box.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left)) + 'px';
+      box.style.top = Math.max(8, top) + 'px';
+    }
+    var ready = L.cached(t.title);
+    if (ready) { paint(ready); return; }
+    paint(null);
+    L.translations(t.title).then(paint);
+  }
+  document.addEventListener('pointerdown', function (e) {
+    if (tip.id && !e.target.closest('#tip, .tr-btn')) hideTip();
+  }, true);
+  document.addEventListener('scroll', function () { if (tip.id) hideTip(); }, true);
+
   $('fab').addEventListener('click', openSheet);
 
   $('menuBtn').addEventListener('click', function (e) {
@@ -2424,6 +2510,7 @@
     if ($('app').classList.contains('nav-open') && !$('side').contains(e.target)) closeNav();
   });
   document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('tip').hidden) { hideTip(); return; }
     if (e.key === 'Escape' && openMenu) { openMenu = null; render(); }
     // Escape закриває верхнє вікно, де б не був фокус (після кнопки в картці він на сторінці)
     else if (e.key === 'Escape' && overlays.length) { e.preventDefault(); closeTop(); }

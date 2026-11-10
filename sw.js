@@ -17,7 +17,8 @@ var SHELL = [
   './icon-512.png',
   './icon-maskable-512.png',
   './apple-touch-icon.png',
-  './config.js'
+  './config.js',
+  './lingo.js'
 ];
 
 var NET_TIMEOUT = 2500;

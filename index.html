@@ -19,7 +19,7 @@
 <meta name="apple-mobile-web-app-title" content="Справи">
 <meta name="format-detection" content="telephone=no">
 <!-- Виконується лише код цього сайту, а звʼязок — тільки з базою -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://kcxqienzhopnsqmykhqv.supabase.co; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://kcxqienzhopnsqmykhqv.supabase.co https://api.mymemory.translated.net; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 </head>
 <body>
 
@@ -83,8 +83,11 @@
 <div id="help"></div>
 <div id="kick"></div>
 <div id="toast-slot"></div>
+<!-- Переклад назви завдання: з'являється при наведенні чи тапом по значку -->
+<div id="tip" class="tip" role="tooltip" hidden></div>
 
 <script src="config.js"></script>
+<script src="lingo.js"></script>
 <script src="tasks.js"></script>
 </body>
 </html>
