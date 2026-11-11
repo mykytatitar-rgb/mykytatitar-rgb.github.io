@@ -2514,12 +2514,7 @@
           h('div', { class: 'tr-text' }, r[0]),
           r[1] ? h('div', { class: 'tr-notes' }, r[1]) : null,
           h('div', { class: 'help-row' },
-            h('button', { type: 'button', class: 'btn primary', onclick: function () {
-              var was = [t.title, t.notes];
-              t.title = r[0]; if (t.notes) t.notes = r[1] || t.notes;
-              commit();
-              toast('Текст замінено перекладом', function () { t.title = was[0]; t.notes = was[1]; commit(); });
-            } }, 'Замінити'),
+            h('button', { type: 'button', class: 'btn primary', onclick: function () { useTranslation(t, lang, r[0], r[1]); } }, 'Замінити'),
             h('button', { type: 'button', class: 'btn', onclick: pick }, 'Інша мова'))));
       }, function (e) {
         if (box.isConnected) box.replaceChildren(h('div', { class: 'tr-preview tip-err' }, 'Не вдалося перекласти: ' + e.message + '.'),
@@ -2533,22 +2528,38 @@
   /* Підказка з перекладом. На комп'ютері — після короткої затримки наведення
      на назву (не на кожен рух мишки), на телефоні — тапом по значку. */
   var TIP_DELAY = 600;
-  var tip = { id: null, mode: '', timer: null };
+  var TIP_GRACE = 300;     // стільки мишка має, щоб перейти з назви на підказку
+  var tip = { id: null, mode: '', timer: null, hide: null };
 
   function tipHover(t, anchor) {
     if (hoverMq.matches || !t.title) return;
-    clearTimeout(tip.timer);
+    clearTimeout(tip.timer); clearTimeout(tip.hide);
     tip.timer = setTimeout(function () { showTip(t, anchor, 'hover'); }, TIP_DELAY);
   }
   function tipLeave() {
     clearTimeout(tip.timer);
-    if (tip.mode === 'hover') hideTip();
+    if (tip.mode === 'hover') tip.hide = setTimeout(hideTip, TIP_GRACE);
+  }
+  $('tip').addEventListener('mouseenter', function () { clearTimeout(tip.hide); });
+  $('tip').addEventListener('mouseleave', function () { if (tip.mode === 'hover') hideTip(); });
+
+  /** Замінити текст завдання перекладом: назву одразу, нотатки — разом із нею або щойно перекладуться.
+      Одне місце для підказки й картки; «Скасувати» повертає обидва. */
+  function useTranslation(t, lang, title, notes) {
+    var L = window.SpravyLingo, was = [t.title, t.notes];
+    t.title = title;
+    if (notes !== undefined && t.notes) t.notes = notes || t.notes;
+    commit();
+    toast('Перекладено: ' + L.NAMES[lang], function () { t.title = was[0]; t.notes = was[1]; commit(); });
+    if (notes === undefined && t.notes) L.translateTo(was[1], lang).then(function (n) {
+      if (t.title === title && t.notes === was[1] && n) { t.notes = n; commit(); }
+    }, function () { /* нотатки лишаються як були */ });
   }
   function tipToggle(t, anchor) {
     if (tip.id === t.id && tip.mode === 'click') hideTip(); else showTip(t, anchor, 'click');
   }
   function hideTip() {
-    clearTimeout(tip.timer);
+    clearTimeout(tip.timer); clearTimeout(tip.hide);
     tip.id = null; tip.mode = '';
     $('tip').hidden = true;
   }
@@ -2559,9 +2570,13 @@
     tip.id = id; tip.mode = mode;
     function paint(items) {
       if (tip.id !== id) return;             // поки чекали, мишка вже на іншому
+      // кожен переклад — кнопка: клік замінює текст завдання цією мовою
       box.replaceChildren.apply(box, items ? items.map(function (x) {
-        return h('div', { class: 'tip-row' }, h('b', {}, L.NAMES[x.lang]),
-          x.error ? h('span', { class: 'tip-err' }, 'Не вдалося перекласти: ' + x.error + '.') : h('span', {}, x.text));
+        if (x.error) return h('div', { class: 'tip-row', 'data-lang': x.lang }, h('b', {}, L.NAMES[x.lang]),
+          h('span', { class: 'tip-err' }, 'Не вдалося перекласти: ' + x.error + '.'));
+        return h('button', { type: 'button', class: 'tip-row pick', 'data-lang': x.lang, title: 'Замінити текст завдання цим перекладом',
+          onclick: function () { var task = db.tasks[id]; hideTip(); if (task) useTranslation(task, x.lang, x.text); } },
+          h('b', {}, L.NAMES[x.lang]), h('span', {}, x.text));
       }) : [h('div', { class: 'tip-row muted' }, 'Перекладаю…')]);
       box.hidden = false;
       var r = anchor.getBoundingClientRect(), w = box.offsetWidth, hgt = box.offsetHeight;

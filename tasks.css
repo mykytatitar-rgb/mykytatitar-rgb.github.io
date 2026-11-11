@@ -458,6 +458,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 }
 .tip[hidden] { display: none; }
 .tip-row { display: flex; gap: .55rem; align-items: baseline; overflow-wrap: anywhere; }
+.tip-row.pick { width: 100%; text-align: left; color: inherit; padding: .3rem .45rem; margin: 0 -.45rem; border-radius: .5rem; cursor: pointer; }
+.tip-row.pick:hover, .tip-row.pick:focus-visible { background: color-mix(in srgb, var(--bg) 18%, transparent); }
 .tip-row b { flex: none; font-size: .72rem; letter-spacing: .05em; opacity: .7; }
 .tip-row.muted, .tip-err { opacity: .75; }
 
