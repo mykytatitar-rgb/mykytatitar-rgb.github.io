@@ -19,7 +19,9 @@
   var MONTH_SHOWN = 3;           // подій у клітинці місяця, решта — «ще N»
   var ALLDAY_SHOWN = 2;          // справ без часу в день, поки рядок «весь день» згорнуто
   var ALLDAY_BARS = 3;
-  var SHORT = 30;                // подія до 30 хв — назва й час в один рядок           // смужок у тижні на телефоні
+  var SHORT = 30;
+  var LIFT_MS = 400;
+  var ECHO_MS = 450;             // клік, що браузер шле слідом за дотиком             // довге натискання пальцем, що піднімає подію                // подія до 30 хв — назва й час в один рядок           // смужок у тижні на телефоні
 
   /* ---------- дати й час (чисті функції) ---------- */
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -39,6 +41,17 @@
     if (!start) return { start: '', end: '' };
     var s = mins(start), e = end ? mins(end) : 0;
     return { start: hhmm(s), end: e > s ? hhmm(e) : hhmm(Math.min(s + 60, 1439)) };
+  }
+
+  /** Дати повторів справи в межах [from, to], після самої дати due. Нічого не зберігається: лише для показу. */
+  function occurrences(due, rep, from, to) {
+    var out = [], dd = parse(due), d = due >= from ? add(due, 1) : from;
+    for (; d <= to; d = add(d, 1)) {
+      var x = parse(d), wd = x.getDay();
+      if (rep === 'daily' || (rep === 'weekdays' && wd % 6 !== 0) || (rep === 'weekly' && wd === dd.getDay()) ||
+          (rep === 'monthly' && x.getDate() === dd.getDate())) out.push(d);
+    }
+    return out;
   }
 
   /** Розкладка подій дня, що перетинаються: { id: { col, cols } } — стоять поруч, кожна у своїй колонці. */
@@ -88,12 +101,27 @@
 
   /* Події за датою: покажчик будується раз на малювання, а не перебором усіх завдань для кожного дня */
   var index = {};
-  function buildIndex() {
+  function buildIndex(from, to) {
     var m = {};
-    api.tasks().forEach(function (t) { (m[t.due] || (m[t.due] = [])).push(t); });
+    function put(d, t) { (m[d] || (m[d] = [])).push(t); }
+    api.tasks().forEach(function (t) {
+      put(t.due, t);
+      // повторювана справа — ще й на всіх майбутніх днях видимого періоду, блідою копією
+      if (t.repeat && t.repeat !== 'none' && !t.done) occurrences(t.due, t.repeat, from, to).forEach(function (d) {
+        put(d, Object.assign({}, t, { due: d, occ: true }));
+      });
+    });
     return m;
   }
+  /** Перший і останній день, які зараз на екрані. */
+  function visible() {
+    if (view() !== 'month') { var ds = days(); return [ds[0], ds[ds.length - 1]]; }
+    var a = parse(anchor()), s = monday(iso(new Date(a.getFullYear(), a.getMonth(), 1)));
+    return [s, add(s, 41)];
+  }
   function eventsOn(date) { return (index[date] || []).slice(); }
+  /** Порядок у клітинці: справжні справи перед повторами, невиконані перед виконаними, далі за часом. */
+  function byPlace(a, b) { return (!!a.occ - !!b.occ) || (a.done - b.done) || ((a.start || '') < (b.start || '') ? -1 : (a.start || '') > (b.start || '') ? 1 : 0); }
   function span(t) { var s = mins(t.start); return { s: s, e: t.end ? mins(t.end) : Math.min(s + 60, 1440) }; }
 
   /* ---------- малювання ---------- */
@@ -101,9 +129,10 @@
 
   function render(container, a) {
     api = a; box = container;
-    if (drag) { pending = true; return; }         // посеред перетягування не перемальовуємо
+    if (drag || dayDrag) { pending = true; return; }   // посеред перетягування не перемальовуємо
     pending = false;
-    index = buildIndex();
+    var vis = visible();
+    index = buildIndex(vis[0], vis[1]);
     var old = container.querySelector('.cal-scroll'), top = old ? old.scrollTop : null;
     var v = view();
     var cal = h('section', { class: 'cal is-' + v },
@@ -131,7 +160,7 @@
   function toggleAllday() { var u = api.ui(); u.calAllOpen = !u.calAllOpen; api.saveUi(); render(box, api); }
 
   function chip(t, withTime) {
-    return h('button', { type: 'button', class: 'ev' + (t.done ? ' done' : ''), style: '--c:' + api.colorOf(t), 'data-id': t.id,
+    return h('button', { type: 'button', class: 'ev' + (t.done ? ' done' : '') + (t.occ ? ' rep' : ''), style: '--c:' + api.colorOf(t), 'data-id': t.id,
       onclick: function (e) { e.stopPropagation(); api.open(t.id); } },
       withTime && t.start ? h('span', { class: 'ev-time' }, t.start + ' ') : null, t.title || 'Без назви');
   }
@@ -149,24 +178,25 @@
     var bars = api.mobile() && ds.length > 1;
     var open = !!api.ui().calAllOpen && !bars, many = false, limit = bars ? ALLDAY_BARS : ALLDAY_SHOWN;
     var cells = ds.map(function (d) {
-      var evs = eventsOn(d).filter(function (t) { return !t.start; }).sort(function (a, b) { return a.done - b.done; });
+      var evs = eventsOn(d).filter(function (t) { return !t.start; }).sort(byPlace);
       if (evs.length > limit) many = true;
       var shown = open ? evs : evs.slice(0, limit), rest = evs.length - shown.length;
       return h('div', { class: 'cell', 'data-date': d, onclick: bars ? function () { setState('day', d); } : null },
-        shown.map(function (t) { return bars ? h('span', { class: 'ev bar' + (t.done ? ' done' : ''), style: '--c:' + api.colorOf(t), title: t.title }) : chip(t, false); }),
+        shown.map(function (t) { return bars ? h('span', { class: 'ev bar' + (t.done ? ' done' : '') + (t.occ ? ' rep' : ''), style: '--c:' + api.colorOf(t), title: t.title }) : chip(t, false); }),
         rest ? h('button', { type: 'button', class: 'more-ev', onclick: bars ? null : toggleAllday }, bars ? '+' + rest : 'ще ' + rest) : null);
     });
-    var allday = h('div', { class: 'cal-allday' + (open ? ' open' : ''), style: cols },
+    var allday = dayDragOn(h('div', { class: 'cal-allday' + (open ? ' open' : ''), style: cols },
       h('div', { class: 'gut' }, 'весь день',
         !bars && (many || open) ? h('button', { type: 'button', class: 'ad-toggle', 'aria-expanded': String(open), 'aria-label': open ? 'Згорнути' : 'Розгорнути',
           title: open ? 'Згорнути' : 'Показати все', onclick: toggleAllday }, open ? '▴' : '▾') : null),
-      cells);
+      cells));
     var hours = h('div', { class: 'cal-hours' }, Array.from({ length: 24 }, function (_, i) { return h('span', { style: 'top:' + i * HOUR + 'px' }, i ? pad(i) + ':00' : ''); }));
     var grid = h('div', { class: 'cal-grid', style: cols + ';height:' + 24 * HOUR + 'px' }, hours, ds.map(function (d) { return column(d, d === t0); }));
     grid.addEventListener('pointerdown', down);
     grid.addEventListener('pointermove', move);
     grid.addEventListener('pointerup', up);
     grid.addEventListener('pointercancel', cancel);
+    grid.addEventListener('touchmove', touchGuard, { passive: false });
     return [head, allday, h('div', { class: 'cal-scroll' }, grid)];
   }
 
@@ -175,7 +205,7 @@
     var lay = layout(evs.map(function (t) { var sp = span(t); return { id: t.id, s: sp.s, e: sp.e }; }));
     var col = h('div', { class: 'cal-col' + (isToday ? ' today' : ''), 'data-date': d }, evs.map(function (t) {
       var sp = span(t), L = lay[t.id];
-      return h('div', { class: 'ev' + (t.done ? ' done' : '') + (sp.e - sp.s <= SHORT ? ' short' : ''), 'data-id': t.id, style: '--c:' + api.colorOf(t) + ';top:' + sp.s / 60 * HOUR + 'px;height:' +
+      return h('div', { class: 'ev' + (t.done ? ' done' : '') + (t.occ ? ' rep' : '') + (sp.e - sp.s <= SHORT ? ' short' : ''), 'data-id': t.id, style: '--c:' + api.colorOf(t) + ';top:' + sp.s / 60 * HOUR + 'px;height:' +
           Math.max(18, (sp.e - sp.s) / 60 * HOUR - 2) + 'px;left:calc(' + L.col / L.cols * 100 + '% + 1px);width:calc(' + 100 / L.cols + '% - 3px)' },
         h('span', { class: 'ev-title' }, t.title || 'Без назви'),
         h('span', { class: 'ev-time' }, range(sp.s, sp.e)),
@@ -188,7 +218,7 @@
   function month() {
     var a = parse(anchor()), first = iso(new Date(a.getFullYear(), a.getMonth(), 1)), start = monday(first), t0 = api.today();
     var cells = Array.from({ length: 42 }, function (_, i) {
-      var d = add(start, i), dd = parse(d), evs = eventsOn(d).sort(function (x, y) { return (x.start || '') < (y.start || '') ? -1 : 1; });
+      var d = add(start, i), dd = parse(d), evs = eventsOn(d).sort(byPlace);
       return h('div', { class: 'cell' + (dd.getMonth() !== a.getMonth() ? ' out' : '') + (d === t0 ? ' today' : ''), 'data-date': d,
         onclick: function (e) {
           if (api.mobile()) return setState('day', d);   // клітинки дрібні: спершу подивитись день
@@ -198,7 +228,7 @@
         evs.slice(0, MONTH_SHOWN).map(function (t) { return chip(t, true); }),
         evs.length > MONTH_SHOWN ? h('button', { type: 'button', class: 'more-ev', onclick: function (e) { e.stopPropagation(); setState('day', d); } }, 'ще ' + (evs.length - MONTH_SHOWN)) : null);
     });
-    return h('div', { class: 'cal-month' }, DOW.map(function (x) { return h('div', { class: 'mhead' }, x); }), cells);
+    return dayDragOn(h('div', { class: 'cal-month' }, DOW.map(function (x) { return h('div', { class: 'mhead' }, x); }), cells));
   }
 
   /* ---------- перетягування по сітці ---------- */
@@ -215,9 +245,11 @@
     if (!col) return;
     var touch = e.pointerType !== 'mouse';
     drag = { grid: e.currentTarget, col: col, el: el, touch: touch, x0: e.clientX, y0: e.clientY, moved: false };
-    if (el) {
+    if (el && el.classList.contains('rep')) drag.mode = 'open';          // повтор не перетягується: лише відкрити справу
+    else if (el) {
       var t = api.task(el.dataset.id), sp = span(t);
       drag.mode = e.target.closest('.ev-handle') ? 'resize' : 'move';
+      if (touch) drag.lift = setTimeout(function () { lift(drag, e.pointerId); }, LIFT_MS);
       drag.s = sp.s; drag.e = sp.e; drag.date = col.dataset.date; drag.grab = minAt(col, e.clientY) - sp.s;
     } else {
       drag.mode = 'create';
@@ -226,9 +258,24 @@
     if (!touch) { e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); }
   }
 
+  /* Пальцем: короткий дотик відкриває, свайп гортає дні, а довге натискання піднімає подію,
+     і далі вона йде за пальцем (сітка в цей час не гортається). */
+  function lift(d, pointerId) {
+    if (!d || drag !== d || d.moved) return;
+    d.lifted = true;
+    d.el.classList.add('lifted');
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+    try { d.grid.setPointerCapture(pointerId); } catch (e) {}
+  }
+  function touchGuard(e) { if (drag && drag.lifted) e.preventDefault(); }
+
   function move(e) {
     var d = drag;
-    if (!d || d.touch) return;                    // пальцем — лише дотик і свайп, сітку гортає браузер
+    if (!d || d.mode === 'open') return;
+    if (d.touch && !d.lifted) {                   // ще не піднято: рух пальця — це гортання чи свайп
+      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > 8) clearTimeout(d.lift);
+      return;
+    }
     if (!d.moved && Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < 5) return;
     d.moved = true;
     var len = d.e - d.s;
@@ -266,8 +313,10 @@
     var d = drag;
     if (!d) return;
     drag = null;
+    clearTimeout(d.lift);
     var dx = e.clientX - d.x0, dy = e.clientY - d.y0;
-    if (d.touch) {
+    if (d.lifted && !d.moved) return finish();     // підняли й відпустили на місці — нічого не міняємо
+    if (d.touch && !d.lifted) {
       if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) return shift(dx < 0 ? 1 : -1);   // свайп
       if (Math.hypot(dx, dy) > 10) return finish();
     }
@@ -288,7 +337,50 @@
     }
     finish();
   }
-  function cancel() { drag = null; finish(); }
+  function cancel() { if (drag) clearTimeout(drag.lift); drag = null; finish(); }
+
+  /* ---------- «весь день» і місяць: перетягнути справу на інший день (мишкою) ---------- */
+  var dayDrag = null;
+  function dayDown(e) {
+    var el = e.target.closest('.ev');
+    if (e.button !== 0 || e.pointerType !== 'mouse' || form || !el || !el.dataset.id || /\b(rep|bar)\b/.test(el.className)) return;
+    dayDrag = { root: e.currentTarget, el: el, id: el.dataset.id, x0: e.clientX, y0: e.clientY, moved: false, pointerId: e.pointerId };
+  }
+  function cellAt(root, x, y) {
+    var cs = root.querySelectorAll('.cell[data-date]');
+    for (var i = 0; i < cs.length; i++) { var r = cs[i].getBoundingClientRect(); if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return cs[i]; }
+    return null;
+  }
+  function dayMove(e) {
+    var d = dayDrag;
+    if (!d) return;
+    var dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+    if (!d.moved) {
+      if (Math.hypot(dx, dy) < 5) return;
+      d.moved = true;                              // захоплюємо лише з першим рухом: простий клік і далі відкриває справу
+      d.root.setPointerCapture(d.pointerId);
+      d.el.classList.add('dragging');
+    }
+    d.el.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    d.root.querySelectorAll('.drop-day').forEach(function (c) { c.classList.remove('drop-day'); });
+    var c = cellAt(d.root, e.clientX, e.clientY);
+    if (c) c.classList.add('drop-day');
+  }
+  function dayUp(e) {
+    var d = dayDrag;
+    dayDrag = null;
+    if (!d || !d.moved) return;
+    var c = cellAt(d.root, e.clientX, e.clientY), t = api.task(d.id);
+    if (c && t && t.due !== c.dataset.date) { t.due = c.dataset.date; api.save(); } else finish();
+  }
+  function dayCancel() { dayDrag = null; finish(); }
+  function dayDragOn(root) {
+    root.addEventListener('pointerdown', dayDown);
+    root.addEventListener('pointermove', dayMove);
+    root.addEventListener('pointerup', dayUp);
+    root.addEventListener('pointercancel', dayCancel);
+    return root;
+  }
   function finish() { render(box, api); }
 
   /* ---------- швидка форма ---------- */
@@ -319,7 +411,9 @@
       h('div', { class: 'calform-actions' },
         h('button', { type: 'button', class: 'btn', onclick: function () { closeForm(); } }, 'Скасувати'),
         h('button', { type: 'submit', class: 'btn primary' }, 'Зберегти')));
-    var wrap = h('div', { class: 'calform-layer' }, h('div', { class: 'calform-scrim', onclick: function () { closeForm(); } }), el);
+    // форма відкривається, коли палець відпустили; клік того самого дотику прилітає слідом — він не має її закрити
+    var opened = Date.now();
+    var wrap = h('div', { class: 'calform-layer' }, h('div', { class: 'calform-scrim', onclick: function () { if (Date.now() - opened > ECHO_MS) closeForm(); } }), el);
     document.body.append(wrap);
     if (!api.mobile()) {
       var w = el.offsetWidth, hgt = el.offsetHeight;
@@ -355,5 +449,5 @@
     document.querySelectorAll('.cal .now-line').forEach(function (l) { l.style.top = (n.getHours() * 60 + n.getMinutes()) / 60 * HOUR + 'px'; });
   }, 60000);
 
-  window.SpravyCal = { render: render, layout: layout, normTimes: normTimes, closeForm: closeForm, HOUR: HOUR };
+  window.SpravyCal = { render: render, layout: layout, occurrences: occurrences, normTimes: normTimes, closeForm: closeForm, HOUR: HOUR };
 })();

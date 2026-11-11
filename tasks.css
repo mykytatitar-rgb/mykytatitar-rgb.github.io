@@ -514,6 +514,10 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .cal-col.today { background-color: color-mix(in srgb, var(--accent) 6%, transparent); }
 .ev-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; }
 .ev.dragging { opacity: .85; box-shadow: var(--shadow); z-index: 3; }
+.ev.rep { opacity: .55; background: color-mix(in srgb, var(--c) 14%, var(--surface)); border-left-style: dashed; }
+.ev.lifted { box-shadow: var(--shadow); transform: scale(1.03); z-index: 5; }
+.cell.drop-day { background: var(--accent-soft) !important; }
+.cal-allday .ev.dragging, .cal-month .ev.dragging { position: relative; z-index: 6; box-shadow: var(--shadow); pointer-events: none; }
 .ev.ghost { opacity: .7; border-style: dashed; pointer-events: none; z-index: 2; }
 .now-line { position: absolute; left: -1px; right: 0; height: 2px; background: #e5484d; z-index: 4; pointer-events: none; }
 .now-line::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: #e5484d; }
