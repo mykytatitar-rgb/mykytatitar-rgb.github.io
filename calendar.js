@@ -18,7 +18,8 @@
   var DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   var MONTH_SHOWN = 3;           // подій у клітинці місяця, решта — «ще N»
   var ALLDAY_SHOWN = 2;          // справ без часу в день, поки рядок «весь день» згорнуто
-  var ALLDAY_BARS = 3;           // смужок у тижні на телефоні
+  var ALLDAY_BARS = 3;
+  var SHORT = 30;                // подія до 30 хв — назва й час в один рядок           // смужок у тижні на телефоні
 
   /* ---------- дати й час (чисті функції) ---------- */
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -28,6 +29,7 @@
   function monday(s) { return add(s, -((parse(s).getDay() + 6) % 7)); }
   function mins(t) { var p = String(t).split(':'); return +p[0] * 60 + +p[1]; }
   function hhmm(m) { m = Math.max(0, Math.min(1439, Math.round(m))); return pad(Math.floor(m / 60)) + ':' + pad(m % 60); }
+  function range(s, e) { return hhmm(s) + '–' + (e >= 1440 ? '24:00' : hhmm(e)); }
   function snap(m) { return Math.max(0, Math.min(1440, Math.round(m / SNAP) * SNAP)); }
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
   function noYearMark(s) { return s.replace(/\s*р\.$/, ''); }
@@ -84,9 +86,14 @@
     return (s.getMonth() === e.getMonth() ? s.getDate() + '–' + dm(e) : dm(s) + ' – ' + dm(e)) + ' ' + e.getFullYear();
   }
 
-  function eventsOn(date) {
-    return api.tasks().filter(function (t) { return t.due === date; });
+  /* Події за датою: покажчик будується раз на малювання, а не перебором усіх завдань для кожного дня */
+  var index = {};
+  function buildIndex() {
+    var m = {};
+    api.tasks().forEach(function (t) { (m[t.due] || (m[t.due] = [])).push(t); });
+    return m;
   }
+  function eventsOn(date) { return (index[date] || []).slice(); }
   function span(t) { var s = mins(t.start); return { s: s, e: t.end ? mins(t.end) : Math.min(s + 60, 1440) }; }
 
   /* ---------- малювання ---------- */
@@ -96,6 +103,7 @@
     api = a; box = container;
     if (drag) { pending = true; return; }         // посеред перетягування не перемальовуємо
     pending = false;
+    index = buildIndex();
     var old = container.querySelector('.cal-scroll'), top = old ? old.scrollTop : null;
     var v = view();
     var cal = h('section', { class: 'cal is-' + v },
@@ -111,7 +119,7 @@
     container.replaceChildren(cal);
     var sc = cal.querySelector('.cal-scroll');
     if (!sc) return;
-    var key = v + days()[0];
+    var key = v;
     if (key === scrollKey && top != null) sc.scrollTop = top;
     else {
       var now = new Date(), withToday = days().indexOf(api.today()) >= 0;
@@ -165,12 +173,12 @@
   function column(d, isToday) {
     var evs = eventsOn(d).filter(function (t) { return t.start; });
     var lay = layout(evs.map(function (t) { var sp = span(t); return { id: t.id, s: sp.s, e: sp.e }; }));
-    var col = h('div', { class: 'cal-col', 'data-date': d }, evs.map(function (t) {
+    var col = h('div', { class: 'cal-col' + (isToday ? ' today' : ''), 'data-date': d }, evs.map(function (t) {
       var sp = span(t), L = lay[t.id];
-      return h('div', { class: 'ev' + (t.done ? ' done' : ''), 'data-id': t.id, style: '--c:' + api.colorOf(t) + ';top:' + sp.s / 60 * HOUR + 'px;height:' +
+      return h('div', { class: 'ev' + (t.done ? ' done' : '') + (sp.e - sp.s <= SHORT ? ' short' : ''), 'data-id': t.id, style: '--c:' + api.colorOf(t) + ';top:' + sp.s / 60 * HOUR + 'px;height:' +
           Math.max(18, (sp.e - sp.s) / 60 * HOUR - 2) + 'px;left:calc(' + L.col / L.cols * 100 + '% + 1px);width:calc(' + 100 / L.cols + '% - 3px)' },
         h('span', { class: 'ev-title' }, t.title || 'Без назви'),
-        h('span', { class: 'ev-time' }, hhmm(sp.s) + '–' + (sp.e >= 1440 ? '24:00' : hhmm(sp.e))),
+        h('span', { class: 'ev-time' }, range(sp.s, sp.e)),
         h('span', { class: 'ev-handle', 'aria-hidden': 'true' }));
     }));
     if (isToday) { var n = new Date(); col.append(h('div', { class: 'now-line', style: 'top:' + (n.getHours() * 60 + n.getMinutes()) / 60 * HOUR + 'px' })); }
@@ -182,7 +190,10 @@
     var cells = Array.from({ length: 42 }, function (_, i) {
       var d = add(start, i), dd = parse(d), evs = eventsOn(d).sort(function (x, y) { return (x.start || '') < (y.start || '') ? -1 : 1; });
       return h('div', { class: 'cell' + (dd.getMonth() !== a.getMonth() ? ' out' : '') + (d === t0 ? ' today' : ''), 'data-date': d,
-        onclick: function (e) { var r = e.currentTarget.getBoundingClientRect(); openForm({ date: d, start: '', end: '' }, e.clientX || r.left, e.clientY || r.top); } },
+        onclick: function (e) {
+          if (api.mobile()) return setState('day', d);   // клітинки дрібні: спершу подивитись день
+          var r = e.currentTarget.getBoundingClientRect(); openForm({ date: d, start: '', end: '' }, e.clientX || r.left, e.clientY || r.top);
+        } },
         h('button', { type: 'button', class: 'dnum', onclick: function (e) { e.stopPropagation(); setState('day', d); } }, dd.getDate()),
         evs.slice(0, MONTH_SHOWN).map(function (t) { return chip(t, true); }),
         evs.length > MONTH_SHOWN ? h('button', { type: 'button', class: 'more-ev', onclick: function (e) { e.stopPropagation(); setState('day', d); } }, 'ще ' + (evs.length - MONTH_SHOWN)) : null);
@@ -242,13 +253,13 @@
     el.style.height = Math.max(18, (e - s) / 60 * HOUR - 2) + 'px';
     if (full) { el.style.left = '1px'; el.style.width = 'calc(100% - 3px)'; }
     el.classList.add('dragging');
-    el.querySelector('.ev-time').textContent = hhmm(s) + '–' + (e >= 1440 ? '24:00' : hhmm(e));
+    el.querySelector('.ev-time').textContent = range(s, e);
   }
   function ghost(col, s, e) {
     var g = col.querySelector('.ev.ghost') || col.appendChild(h('div', { class: 'ev ghost', style: '--c:' + api.defaultColor() }, h('span', { class: 'ev-time' })));
     g.style.top = s / 60 * HOUR + 'px';
     g.style.height = Math.max(18, (e - s) / 60 * HOUR - 2) + 'px';
-    g.querySelector('.ev-time').textContent = hhmm(s) + '–' + (e >= 1440 ? '24:00' : hhmm(e));
+    g.querySelector('.ev-time').textContent = range(s, e);
   }
 
   function up(e) {
@@ -278,7 +289,7 @@
     finish();
   }
   function cancel() { drag = null; finish(); }
-  function finish() { if (pending || box) render(box, api); }
+  function finish() { render(box, api); }
 
   /* ---------- швидка форма ---------- */
   function openForm(o, x, y) {
@@ -288,8 +299,8 @@
     var start = h('input', { name: 'start', type: 'time', step: '900', value: o.start, 'aria-label': 'Початок' });
     var end = h('input', { name: 'end', type: 'time', step: '900', value: o.end, 'aria-label': 'Кінець' });
     var sw = h('div', { class: 'swatches' }, api.colors.map(function (c) {
-      return h('button', { type: 'button', class: 'swatch', style: '--c:' + c, 'aria-label': 'Колір', 'aria-pressed': String(c === color),
-        onclick: function () { color = c; sw.querySelectorAll('.swatch').forEach(function (b) { b.setAttribute('aria-pressed', String(b.style.getPropertyValue('--c') === c)); }); } });
+      return h('button', { type: 'button', class: 'swatch', style: '--c:' + c, 'data-c': c, 'aria-label': 'Колір', 'aria-pressed': String(c === color),
+        onclick: function () { color = c; sw.querySelectorAll('.swatch').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.c === c)); }); } });
     }));
     function save(e) {
       if (e) e.preventDefault();
@@ -327,6 +338,16 @@
     if (!fromBack) api.popOverlay('calform');
     document.querySelectorAll('.cal .ev.ghost').forEach(function (g) { g.remove(); });
   }
+
+  var KEYS = { KeyT: function () { setState(view(), api.today()); }, ArrowLeft: function () { shift(-1); }, ArrowRight: function () { shift(1); },
+    KeyD: function () { setState('day', anchor()); }, KeyW: function () { setState('week', anchor()); }, KeyM: function () { setState('month', anchor()); } };
+  document.addEventListener('keydown', function (e) {
+    var fn = KEYS[e.code];
+    if (!fn || !box || !box.querySelector('.cal') || form || drag || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName) || document.querySelector('.drawer, .modal, .add-sheet')) return;
+    e.preventDefault();
+    fn();
+  });
 
   /* червона лінія часу рухається сама, без перемальовування */
   setInterval(function () {

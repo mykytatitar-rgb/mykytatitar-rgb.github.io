@@ -508,6 +508,10 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .cal-col .ev { position: absolute; white-space: normal; display: flex; flex-direction: column; box-shadow: 0 0 0 1px var(--surface); }
 .cal-col .ev-title { font-weight: 600; overflow: hidden; }
 .cal-col .ev-time { font-size: .72rem; color: var(--muted); }
+.cal-col .ev.short { flex-direction: row; align-items: baseline; gap: .35rem; padding-top: 0; padding-bottom: 0; }
+.cal-col .ev.short .ev-title { min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
+.cal-col .ev.short .ev-time { flex: none; }
+.cal-col.today { background-color: color-mix(in srgb, var(--accent) 6%, transparent); }
 .ev-handle { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; }
 .ev.dragging { opacity: .85; box-shadow: var(--shadow); z-index: 3; }
 .ev.ghost { opacity: .7; border-style: dashed; pointer-events: none; z-index: 2; }
