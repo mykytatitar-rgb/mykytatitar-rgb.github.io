@@ -666,9 +666,23 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   .view-cal .fab { display: none; }
   .view-cal .board { padding-bottom: 0; }
   .cal { height: calc(100dvh - 8.4rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); border-radius: 0; background: transparent; }
-  .cal-bar { padding: .5rem .55rem; gap: .3rem; }
-  .cal-title { order: -1; flex-basis: 100%; margin: 0 .2rem .1rem; font-size: 1.05rem; }
-  .cal-views { margin-left: auto; }
+  /* два компактні рядки: «‹ період ›», під ним «Сьогодні» й види */
+  .cal-bar { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "prev title next" "today views views";
+    align-items: center; gap: .25rem .3rem; padding: .35rem .45rem .45rem; }
+  .cal-prev { grid-area: prev; } .cal-next { grid-area: next; }
+  .cal-title { grid-area: title; min-width: 0; margin: 0; font-size: 1.05rem; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cal-today { grid-area: today; justify-self: start; }
+  .cal-views { grid-area: views; justify-self: end; }
+  .cal-bar .btn { padding: .3rem .7rem; }
+  .cal-views button { padding: .25rem .5rem; font-size: .8rem; }
+  .cal-head, .cal-allday, .cal-grid { grid-template-columns: 2.4rem repeat(var(--n, 7), minmax(0, 1fr)) !important; }
+  .cal-dayhead { padding: .2rem 0 .15rem; }
+  .cal-dayhead .dnum { width: 1.8rem; height: 1.8rem; font-size: .95rem; }
+  .cal-allday .gut { font-size: .6rem; padding-right: .2rem; }
+  .cal-allday .cell { cursor: pointer; padding: .2rem .15rem; gap: .2rem; }
+  .cal-allday .ev.bar { display: block; width: 100%; max-width: 100%; height: .45rem; padding: 0; border: 0; border-radius: 999px; background: var(--c); }
+  .cal-allday .more-ev { font-size: .7rem; padding: 0; text-align: center; }
+  .cal-hours span { font-size: .62rem; right: .25rem; }
   .cal-month .cell { min-height: 4.2rem; }
   .cal.is-day .cal-head { display: none; }   /* день уже названо в заголовку: місце — сітці */
   .cal-month .ev .ev-time { display: none; }

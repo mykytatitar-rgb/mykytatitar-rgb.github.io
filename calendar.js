@@ -18,6 +18,7 @@
   var DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   var MONTH_SHOWN = 3;           // подій у клітинці місяця, решта — «ще N»
   var ALLDAY_SHOWN = 2;          // справ без часу в день, поки рядок «весь день» згорнуто
+  var ALLDAY_BARS = 3;           // смужок у тижні на телефоні
 
   /* ---------- дати й час (чисті функції) ---------- */
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -76,10 +77,10 @@
 
   function title() {
     var v = view(), a = anchor(), d = parse(a);
-    if (v === 'day') return cap(noYearMark(d.toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })));
+    if (v === 'day') return cap(noYearMark(d.toLocaleDateString('uk-UA', api.mobile() ? { weekday: 'short', day: 'numeric', month: 'long' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })));
     if (v === 'month') return cap(noYearMark(d.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })));
-    var w = days(), s = parse(w[0]), e = parse(w[6]);
-    var dm = function (x) { return x.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }); };
+    var w = days(), s = parse(w[0]), e = parse(w[6]), mon = api.mobile() ? 'short' : 'long';
+    var dm = function (x) { return x.toLocaleDateString('uk-UA', { day: 'numeric', month: mon }); };
     return (s.getMonth() === e.getMonth() ? s.getDate() + '–' + dm(e) : dm(s) + ' – ' + dm(e)) + ' ' + e.getFullYear();
   }
 
@@ -128,7 +129,7 @@
   }
 
   function timed() {
-    var ds = days(), t0 = api.today(), cols = 'grid-template-columns: 3.5rem repeat(' + ds.length + ', minmax(0, 1fr))';
+    var ds = days(), t0 = api.today(), cols = '--n:' + ds.length + ';grid-template-columns: 3.5rem repeat(' + ds.length + ', minmax(0, 1fr))';
     var head = h('div', { class: 'cal-head', style: cols }, h('div', {}), ds.map(function (d, i) {
       var dd = parse(d);
       return h('div', { class: 'cal-dayhead' + (d === t0 ? ' today' : '') },
@@ -136,17 +137,20 @@
         h('button', { type: 'button', class: 'dnum', 'aria-label': 'Відкрити день', onclick: function () { setState('day', d); } }, dd.getDate()));
     }));
     // «весь день» згорнуто до ALLDAY_SHOWN справ на день, щоб сітці лишалось місце; кнопка розгортає
-    var open = !!api.ui().calAllOpen, many = false;
+    // на телефоні в тижні колонки вузькі: замість обрізаних назв — кольорові смужки й «+N», дотик відкриває день
+    var bars = api.mobile() && ds.length > 1;
+    var open = !!api.ui().calAllOpen && !bars, many = false, limit = bars ? ALLDAY_BARS : ALLDAY_SHOWN;
     var cells = ds.map(function (d) {
       var evs = eventsOn(d).filter(function (t) { return !t.start; }).sort(function (a, b) { return a.done - b.done; });
-      if (evs.length > ALLDAY_SHOWN) many = true;
-      var shown = open ? evs : evs.slice(0, ALLDAY_SHOWN);
-      return h('div', { class: 'cell', 'data-date': d }, shown.map(function (t) { return chip(t, false); }),
-        shown.length < evs.length ? h('button', { type: 'button', class: 'more-ev', onclick: toggleAllday }, 'ще ' + (evs.length - shown.length)) : null);
+      if (evs.length > limit) many = true;
+      var shown = open ? evs : evs.slice(0, limit), rest = evs.length - shown.length;
+      return h('div', { class: 'cell', 'data-date': d, onclick: bars ? function () { setState('day', d); } : null },
+        shown.map(function (t) { return bars ? h('span', { class: 'ev bar' + (t.done ? ' done' : ''), style: '--c:' + api.colorOf(t), title: t.title }) : chip(t, false); }),
+        rest ? h('button', { type: 'button', class: 'more-ev', onclick: bars ? null : toggleAllday }, bars ? '+' + rest : 'ще ' + rest) : null);
     });
     var allday = h('div', { class: 'cal-allday' + (open ? ' open' : ''), style: cols },
       h('div', { class: 'gut' }, 'весь день',
-        many || open ? h('button', { type: 'button', class: 'ad-toggle', 'aria-expanded': String(open), 'aria-label': open ? 'Згорнути' : 'Розгорнути',
+        !bars && (many || open) ? h('button', { type: 'button', class: 'ad-toggle', 'aria-expanded': String(open), 'aria-label': open ? 'Згорнути' : 'Розгорнути',
           title: open ? 'Згорнути' : 'Показати все', onclick: toggleAllday }, open ? '▴' : '▾') : null),
       cells);
     var hours = h('div', { class: 'cal-hours' }, Array.from({ length: 24 }, function (_, i) { return h('span', { style: 'top:' + i * HOUR + 'px' }, i ? pad(i) + ':00' : ''); }));
