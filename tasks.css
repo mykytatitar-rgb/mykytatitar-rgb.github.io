@@ -476,7 +476,20 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .today > .dnum, .cal-dayhead.today .dnum { background: var(--accent); color: var(--accent-ink); }
 .cal-dayhead.today .dow { color: var(--accent); font-weight: 600; }
 .cal-allday { border-bottom: 1px solid var(--line); min-height: 1.9rem; }
-.cal-allday .gut { font-size: .68rem; color: var(--faint); text-align: right; padding: .35rem .4rem 0 0; }
+.cal-allday .gut { font-size: .68rem; color: var(--faint); text-align: right; padding: .35rem .4rem 0 0; display: flex; flex-direction: column; align-items: flex-end; gap: .2rem; }
+.ad-toggle { width: 1.6rem; height: 1.6rem; border-radius: .5rem; color: var(--muted); font-size: .9rem; }
+.ad-toggle:hover { background: var(--surface-2); color: var(--fg); }
+.cal-allday.open { max-height: 40vh; overflow-y: auto; }
+.cal-allday .more-ev { align-self: stretch; text-align: left; }
+.tr-card { display: flex; flex-direction: column; gap: .4rem; }
+.tr-pick { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; color: var(--muted); font-size: .9rem; }
+.tr-pick button:not(.link-btn) { padding: .3rem .75rem; border: 1px solid var(--line); border-radius: 999px; font-weight: 600; font-size: .85rem; color: var(--fg); }
+.tr-pick button:not(.link-btn):hover { background: var(--surface-2); }
+.tr-preview { display: flex; flex-direction: column; gap: .35rem; padding: .7rem .85rem; border-radius: .9rem; background: var(--surface-2); }
+.tr-preview b { font-size: .72rem; letter-spacing: .06em; color: var(--muted); }
+.tr-text { font-weight: 600; overflow-wrap: anywhere; }
+.tr-notes { color: var(--muted); font-size: .9rem; white-space: pre-wrap; }
+.tr-preview.muted { color: var(--muted); }
 .cal-allday .cell { border-left: 1px solid var(--line); padding: .15rem; display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
 .cal-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .cal-grid { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
@@ -657,6 +670,7 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   .cal-title { order: -1; flex-basis: 100%; margin: 0 .2rem .1rem; font-size: 1.05rem; }
   .cal-views { margin-left: auto; }
   .cal-month .cell { min-height: 4.2rem; }
+  .cal.is-day .cal-head { display: none; }   /* день уже названо в заголовку: місце — сітці */
   .cal-month .ev .ev-time { display: none; }
   .calform { left: 0 !important; right: 0; bottom: 0; top: auto !important; width: 100%; border-radius: 1.4rem 1.4rem 0 0;
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }

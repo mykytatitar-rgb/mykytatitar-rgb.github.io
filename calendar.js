@@ -17,6 +17,7 @@
   var SNAP = 15;                 // крок сітки, хвилин
   var DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
   var MONTH_SHOWN = 3;           // подій у клітинці місяця, решта — «ще N»
+  var ALLDAY_SHOWN = 2;          // справ без часу в день, поки рядок «весь день» згорнуто
 
   /* ---------- дати й час (чисті функції) ---------- */
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -118,6 +119,8 @@
     scrollKey = key;
   }
 
+  function toggleAllday() { var u = api.ui(); u.calAllOpen = !u.calAllOpen; api.saveUi(); render(box, api); }
+
   function chip(t, withTime) {
     return h('button', { type: 'button', class: 'ev' + (t.done ? ' done' : ''), style: '--c:' + api.colorOf(t), 'data-id': t.id,
       onclick: function (e) { e.stopPropagation(); api.open(t.id); } },
@@ -132,9 +135,20 @@
         h('span', { class: 'dow' }, DOW[(dd.getDay() + 6) % 7]),
         h('button', { type: 'button', class: 'dnum', 'aria-label': 'Відкрити день', onclick: function () { setState('day', d); } }, dd.getDate()));
     }));
-    var allday = h('div', { class: 'cal-allday', style: cols }, h('div', { class: 'gut' }, 'весь день'), ds.map(function (d) {
-      return h('div', { class: 'cell', 'data-date': d }, eventsOn(d).filter(function (t) { return !t.start; }).map(function (t) { return chip(t, false); }));
-    }));
+    // «весь день» згорнуто до ALLDAY_SHOWN справ на день, щоб сітці лишалось місце; кнопка розгортає
+    var open = !!api.ui().calAllOpen, many = false;
+    var cells = ds.map(function (d) {
+      var evs = eventsOn(d).filter(function (t) { return !t.start; }).sort(function (a, b) { return a.done - b.done; });
+      if (evs.length > ALLDAY_SHOWN) many = true;
+      var shown = open ? evs : evs.slice(0, ALLDAY_SHOWN);
+      return h('div', { class: 'cell', 'data-date': d }, shown.map(function (t) { return chip(t, false); }),
+        shown.length < evs.length ? h('button', { type: 'button', class: 'more-ev', onclick: toggleAllday }, 'ще ' + (evs.length - shown.length)) : null);
+    });
+    var allday = h('div', { class: 'cal-allday' + (open ? ' open' : ''), style: cols },
+      h('div', { class: 'gut' }, 'весь день',
+        many || open ? h('button', { type: 'button', class: 'ad-toggle', 'aria-expanded': String(open), 'aria-label': open ? 'Згорнути' : 'Розгорнути',
+          title: open ? 'Згорнути' : 'Показати все', onclick: toggleAllday }, open ? '▴' : '▾') : null),
+      cells);
     var hours = h('div', { class: 'cal-hours' }, Array.from({ length: 24 }, function (_, i) { return h('span', { style: 'top:' + i * HOUR + 'px' }, i ? pad(i) + ':00' : ''); }));
     var grid = h('div', { class: 'cal-grid', style: cols + ';height:' + 24 * HOUR + 'px' }, hours, ds.map(function (d) { return column(d, d === t0); }));
     grid.addEventListener('pointerdown', down);

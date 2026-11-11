@@ -17,17 +17,34 @@
   var MAX_BYTES = 450;                       // ліміт сервісу — 500 байтів на запит
   var SPEECH = { uk: 'uk-UA', en: 'en-US', es: 'es-ES' };
 
-  /** Мова тексту завдання: uk, es чи en. Кирилиця — українська; іспанські літери чи слова — іспанська. */
-  function detect(text) {
-    var s = String(text || '');
-    if (/[Ѐ-ӿ]/.test(s)) return 'uk';
-    if (/[ñ¿¡áéíóúü]/i.test(s) ||
-        /(^|[^\p{L}])(el|la|los|las|del|que|para|con|por|una|y|de|comprar|compra|hacer|tengo|mañana)(?=$|[^\p{L}])/iu.test(s)) return 'es';
-    return 'en';
+  var ALL = ['uk', 'en', 'es'];
+  var TARGETS = { uk: ['en', 'es'], en: ['uk', 'es'], es: ['en', 'uk'] };   // з чого → на що, у такому порядку
+
+  /** Латинський текст: іспанська, якщо є її літери чи часті слова, інакше англійська. */
+  function latinLang(s) {
+    return /[ñ¿¡áéíóúü]/i.test(s) ||
+      /(^|[^\p{L}])(el|la|los|las|del|que|para|con|por|una|y|de|comprar|compra|hacer|tengo|mañana)(?=$|[^\p{L}])/iu.test(s) ? 'es' : 'en';
   }
 
-  /** Куди перекладати: українське — англійською й іспанською, решту — українською. */
-  function targets(lang) { return lang === 'uk' ? ['en', 'es'] : ['uk']; }
+  /** Мова тексту: { lang }; mixed — коли в ньому є і кирилиця, і латинські слова (other — друга мова). */
+  function detect(text) {
+    var s = String(text || '');
+    var cyr = (s.match(/[Ѐ-ӿ]/g) || []).length, lat = (s.match(/[a-zñáéíóúü]/gi) || []).length;
+    if (cyr && /[a-zñáéíóúü]{2,}/i.test(s)) {
+      var main = cyr >= lat ? 'uk' : latinLang(s);
+      return { lang: main, other: main === 'uk' ? latinLang(s) : 'uk', mixed: true };
+    }
+    return { lang: cyr ? 'uk' : latinLang(s), mixed: false };
+  }
+
+  /** Що перекладати: [{ from, to }] — одне місце, де вирішуються напрямки.
+      Одна мова — на дві інші (українська першою); кілька мов — одразу на всі три
+      (на основну мову перекладаємо з другої). */
+  function plan(text) {
+    var d = detect(text);
+    if (d.mixed) return ALL.map(function (to) { return { from: to === d.lang ? d.other : d.lang, to: to }; });
+    return TARGETS[d.lang].map(function (to) { return { from: d.lang, to: to }; });
+  }
 
   /* ---------- кеш: { "uk>en:текст": [переклад, коли додано] } ---------- */
   var cache = null;
@@ -79,19 +96,25 @@
 
   /** Усі потрібні переклади тексту: Promise<[{ lang, text } | { lang, error }]>. Помилка одного не ховає інших. */
   function translations(text) {
-    var from = detect(text);
-    return Promise.all(targets(from).map(function (to) {
-      return translate(text, from, to).then(
-        function (t) { return { lang: to, text: t }; },
-        function (e) { return { lang: to, error: e.message }; });
+    return Promise.all(plan(text).map(function (p) {
+      return translate(text, p.from, p.to).then(
+        function (t) { return { lang: p.to, text: t }; },
+        function (e) { return { lang: p.to, error: e.message }; });
     }));
   }
 
   /** Те, що вже є в кеші, без мережі: щоб повторна підказка з'являлась одразу. */
   function cached(text) {
-    var from = detect(text), q = String(text || '').trim(), c = load();
-    var all = targets(from).map(function (to) { var hit = c[from + '>' + to + ':' + q]; return hit && { lang: to, text: hit[0] }; });
+    var q = String(text || '').trim(), c = load();
+    var all = plan(text).map(function (p) { var hit = c[p.from + '>' + p.to + ':' + q]; return hit && { lang: p.to, text: hit[0] }; });
     return all.every(Boolean) ? all : null;
+  }
+
+  /** Переклад на мову to (для заміни тексту в картці); напрямок бере з plan. Порожнє лишається порожнім. */
+  function translateTo(text, to) {
+    if (!String(text || '').trim()) return Promise.resolve('');
+    var p = plan(text).filter(function (x) { return x.to === to; })[0];
+    return p ? translate(text, p.from, to) : Promise.resolve(text);   // текст уже цією мовою
   }
 
   /* ---------- голос ---------- */
@@ -120,7 +143,7 @@
   }
 
   window.SpravyLingo = {
-    detect: detect, targets: targets, translations: translations, cached: cached,
+    detect: detect, plan: plan, translations: translations, cached: cached, translateTo: translateTo,
     canListen: !!Rec, listen: listen, NAMES: { uk: 'UA', en: 'EN', es: 'ES' }
   };
 })();

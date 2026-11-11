@@ -1784,6 +1784,7 @@
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: close }, svg(I.close, 20))),
         title,
         isShouting(t.title) ? h('button', { type: 'button', class: 'decaps', onclick: function () { set('title', calm(t.title)); } }, 'Аа  Прибрати капс') : null,
+        t.title ? translateBox(t) : null,
         // матриця й головне на день — двома перемикачами, без окремих полів
         parent || t.done ? null : h('div', { class: 'd-flags' },
           h('button', { type: 'button', class: 'flag' + (t.starred ? ' on' : ''), 'aria-pressed': String(t.starred),
@@ -2489,6 +2490,44 @@
         });
       } }, svg(I.mic, 18));
     return h('span', { class: 'voice' }, mic, langBtn);
+  }
+
+  /** Картка: перекласти назву й нотатки іншою мовою й замінити ними текст (зі «Скасувати»). */
+  function translateBox(t) {
+    var L = window.SpravyLingo;
+    if (!L) return null;
+    var box = h('div', { class: 'tr-card' });
+    function start() {
+      box.replaceChildren(h('button', { type: 'button', class: 'quiet-link translate-open', onclick: pick }, svg(I.lang, 16, 1.7), 'Перекласти'));
+    }
+    function pick() {
+      box.replaceChildren(h('div', { class: 'tr-pick' }, h('span', {}, 'Перекласти на'),
+        L.plan(t.title).map(function (p) { return h('button', { type: 'button', onclick: function () { show(p.to); } }, L.NAMES[p.to]); }),
+        h('button', { type: 'button', class: 'link-btn', onclick: start }, 'Скасувати')));
+    }
+    function show(lang) {
+      box.replaceChildren(h('div', { class: 'tr-preview muted' }, 'Перекладаю…'));
+      Promise.all([L.translateTo(t.title, lang), L.translateTo(t.notes, lang)]).then(function (r) {
+        if (!box.isConnected) return;
+        box.replaceChildren(h('div', { class: 'tr-preview' },
+          h('b', {}, L.NAMES[lang]),
+          h('div', { class: 'tr-text' }, r[0]),
+          r[1] ? h('div', { class: 'tr-notes' }, r[1]) : null,
+          h('div', { class: 'help-row' },
+            h('button', { type: 'button', class: 'btn primary', onclick: function () {
+              var was = [t.title, t.notes];
+              t.title = r[0]; if (t.notes) t.notes = r[1] || t.notes;
+              commit();
+              toast('Текст замінено перекладом', function () { t.title = was[0]; t.notes = was[1]; commit(); });
+            } }, 'Замінити'),
+            h('button', { type: 'button', class: 'btn', onclick: pick }, 'Інша мова'))));
+      }, function (e) {
+        if (box.isConnected) box.replaceChildren(h('div', { class: 'tr-preview tip-err' }, 'Не вдалося перекласти: ' + e.message + '.'),
+          h('button', { type: 'button', class: 'link-btn', onclick: pick }, 'Спробувати ще'));
+      });
+    }
+    start();
+    return box;
   }
 
   /* Підказка з перекладом. На комп'ютері — після короткої затримки наведення
