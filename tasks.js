@@ -527,6 +527,8 @@
         if (!res.ok) {
           var code = j.error_code || j.error || '';
           if (code === 'invalid_credentials' || code === 'invalid_grant') throw new Error('Пошта чи пароль не підходять');
+          // 5xx: база не встигла відповісти, пароль тут ні до чого
+          if (res.status >= 500) throw new Error('Сервер бази зараз не відповідає. Спробуйте за хвилину');
           throw new Error(j.error_description || j.msg || j.message || 'Не вдалося увійти');
         }
         setSess({ access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || email });
