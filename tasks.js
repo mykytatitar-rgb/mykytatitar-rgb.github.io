@@ -960,13 +960,14 @@
     else if (kind === 'help') closeHelp();
     else if (kind === 'kick') closeKick();
     else if (kind === 'calform') window.SpravyCal.closeForm();
+    else if (kind === 'voice') closeVoice();
   }
   /** Закрити всі вікна разом і прибрати їхні кроки з історії одним стрибком. */
   function closeOverlays() {
     var n = overlays.length;
     if (!n) return;
     overlays = [];
-    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true);
+    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true); closeVoice(true);
     if (drawerTask) closeDrawer(true);
     skipPops++;
     try { history.go(-n); } catch (e) { skipPops--; }
@@ -988,6 +989,7 @@
     else if (kind === 'help') closeHelp(true);
     else if (kind === 'kick') closeKick(true);
     else if (kind === 'calform') window.SpravyCal.closeForm(true);
+    else if (kind === 'voice') closeVoice(true);
   });
 
   /* ---------- шапка й нижня панель телефона ---------- */
@@ -2013,12 +2015,21 @@
     $('login').hidden = true;
     $('app').hidden = false;
     if (rollHabits()) commit(); else render();
+    launchShortcut();
     // жести на телефоні не видно — один раз підказуємо
     if (mobileMq.matches && !ui.tipGestures) {
       ui.tipGestures = true;
       saveUi();
       setTimeout(function () { toast('Свайп праворуч: виконано. Ліворуч: видалити. Довге натискання: перетягнути.', null, 9000); }, 1500);
     }
+  }
+
+  /** Ярлики іконки: ?voice=1 — одразу диктувати, ?add=1 — нове завдання. Один раз за відкриття. */
+  function launchShortcut() {
+    var m = /[?&](voice|add)=1/.exec(location.search);
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.hash);
+    setTimeout(m[1] === 'voice' ? openVoice : openSheet, 50);
   }
 
   /** Копія в браузері належить конкретному входу: увійшли іншим акаунтом — починаємо з чистого. */
@@ -2650,6 +2661,98 @@
       } }, svg(I.mic, 18));
     return h('span', { class: 'voice' }, mic, langBtn);
   }
+
+  /* ============================================================
+     Голос на телефоні: один дотик — і справа в списку.
+     Кнопка мікрофона поруч із «+»; ярлик іконки «Надиктувати справу»
+     (?voice=1) відкриває те саме. «Завтра», «сьогодні» з фрази стають
+     датою. Після додавання — «Ще одну», «Скасувати», «Готово».
+     ============================================================ */
+  var vcap = null;   // { box, listId, run, last }
+
+  function openVoice() {
+    var L = window.SpravyLingo;
+    if (!L || !L.canListen) { toast('Цей браузер не вміє розпізнавати мовлення. Спробуйте Chrome або Safari.'); return; }
+    if (vcap) return;
+    var l = ui.view === 'board' ? currentList() : (lists().filter(function (x) { return x.visible; })[0] || lists()[0]);
+    if (!l) { toast('Спершу створіть список у меню'); return; }
+    var box = h('div', { class: 'vcap', role: 'dialog', 'aria-label': 'Надиктувати справу' });
+    vcap = { box: box, listId: l.id, run: 0, last: null };
+    box.addEventListener('click', function (e) { if (e.target === box) closeVoice(); });   // дотик повз картку
+    document.body.append(vcap.box);
+    pushOverlay('voice');
+    listenVoice();
+  }
+
+  function closeVoice(fromBack) {
+    if (!vcap) return;
+    vcap.run++;                                   // запізнілі відповіді розпізнавання вже нічого не додають
+    window.SpravyLingo.stopListening();
+    vcap.box.remove();
+    vcap = null;
+    if (!fromBack) popOverlay('voice');
+  }
+
+  function voiceLang() { return VOICE.indexOf(ui.voiceLang) >= 0 ? ui.voiceLang : 'uk'; }
+
+  function paintVoice(state, text) {
+    var L = window.SpravyLingo, v = vcap;
+    var list = listOf(v.listId);
+    var lang = h('button', { type: 'button', class: 'mic-lang', title: 'Мова диктування', onclick: function () {
+      ui.voiceLang = VOICE[(VOICE.indexOf(voiceLang()) + 1) % VOICE.length]; saveUi();
+      if (state === 'listen') { v.run++; L.stopListening(); listenVoice(); } else paintVoice(state, text);
+    } }, L.NAMES[voiceLang()]);
+    var big = h('button', { type: 'button', class: 'vcap-mic' + (state === 'listen' ? ' rec' : ''), 'aria-label': state === 'listen' ? 'Зупинити' : 'Говорити',
+      onclick: function () { if (state === 'listen') L.stopListening(); else listenVoice(); } }, svg(I.mic, 34));
+    var body;
+    if (state === 'listen') body = [h('div', { class: 'vcap-say' }, text || 'Слухаю…'), h('div', { class: 'vcap-hint' }, 'Скажіть справу. «Завтра» чи «сьогодні» стане датою.')];
+    else if (state === 'added') body = [h('div', { class: 'vcap-ok' }, '✓ Додано'), h('div', { class: 'vcap-say' }, v.last.title),
+      v.last.due ? h('div', { class: 'vcap-hint' }, dueLabel(v.last.due)) : null];
+    else body = [h('div', { class: 'vcap-say' }, 'Нічого не почув'), h('div', { class: 'vcap-hint' }, text || 'Натисніть «Спробувати ще» і скажіть ще раз.')];
+    function closeBtn(label) { return h('button', { type: 'button', class: 'btn', onclick: function () { closeVoice(); } }, label); }
+    var buttons = state === 'listen' ? [closeBtn('Закрити')]
+      : state === 'added' ? [h('button', { type: 'button', class: 'btn', onclick: undoVoice }, 'Скасувати'), closeBtn('Готово'),
+          h('button', { type: 'button', class: 'btn primary', onclick: listenVoice }, 'Ще одну')]
+      : [closeBtn('Закрити'), h('button', { type: 'button', class: 'btn primary', onclick: listenVoice }, 'Спробувати ще')];
+    v.box.replaceChildren(h('div', { class: 'vcap-card' },
+      h('div', { class: 'vcap-top' }, h('span', { class: 'vcap-list', style: '--c:' + (list ? list.color : '') }, list ? list.name : ''), lang),
+      big, body, h('div', { class: 'vcap-btns' }, buttons)));
+  }
+
+  function listenVoice() {
+    var L = window.SpravyLingo, v = vcap;
+    if (!v) return;
+    var run = ++v.run, heard = '';
+    paintVoice('listen', '');
+    L.listen(voiceLang(), function (text) {
+      if (vcap !== v || v.run !== run) return;
+      heard = text;
+      var say = v.box.querySelector('.vcap-say');
+      if (say) say.textContent = text;
+    }, function (on, err) {
+      if (on || vcap !== v || v.run !== run) return;
+      if (err === 'not-allowed' || err === 'service-not-allowed') return paintVoice('quiet', 'Немає дозволу на мікрофон: дозвольте його в налаштуваннях сайту.');
+      var x = L.spokenTask(heard, today());
+      if (!x.title) return paintVoice('quiet', err && err !== 'no-speech' && err !== 'aborted' ? 'Не вдалося розпізнати. Спробуйте ще раз.' : '');
+      v.run++;                                    // onend після onerror не має додати вдруге
+      v.last = addTask(v.listId, x.title, x.due ? { due: x.due } : {});
+      if (navigator.vibrate) navigator.vibrate(30);
+      paintVoice('added');
+    });
+  }
+
+  function undoVoice() {
+    var t = vcap && vcap.last;
+    if (t && db.tasks[t.id]) { delete db.tasks[t.id]; commit(); }
+    vcap.last = null;
+    listenVoice();
+  }
+
+  (function () {
+    var fabMic = $('fabMic');
+    if (window.SpravyLingo && window.SpravyLingo.canListen) fabMic.hidden = false;
+    fabMic.addEventListener('click', openVoice);
+  })();
 
   /** Картка: перекласти назву й нотатки іншою мовою й замінити ними текст (зі «Скасувати»). */
   function translateBox(t) {

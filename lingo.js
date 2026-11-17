@@ -159,6 +159,34 @@
     });
   }
 
+  /* ---------- надиктована справа: «купити хліб завтра» → назва + дата ---------- */
+  var SPOKEN_DAYS = [                      // довші — першими: «pasado mañana» раніше за «mañana»
+    ['післязавтра', 2], ['pasado mañana', 2], ['the day after tomorrow', 2],
+    ['сьогодні', 0], ['today', 0], ['hoy', 0],
+    ['завтра', 1], ['tomorrow', 1], ['mañana', 1]
+  ];
+  var PREP = '(?:на|в|у|for|para|por)';
+  var EDGE = '[\\s,.:;!?-]*';
+
+  /** Чиста функція: текст мовлення й сьогоднішня дата 'YYYY-MM-DD' → { title, due }.
+      Слово дня беремо лише на початку чи в кінці фрази, щоб не різати середину. */
+  function spokenTask(text, today) {
+    var s = String(text || '').trim(), due = '';
+    for (var i = 0; i < SPOKEN_DAYS.length && !due; i++) {
+      var w = SPOKEN_DAYS[i][0];
+      var head = new RegExp('^(?:' + PREP + '\\s+)?' + w + '(?=$|[^\\p{L}])' + EDGE, 'iu');
+      var tail = new RegExp(EDGE + '(?:\\s' + PREP + ')?\\s+' + w + EDGE + '$', 'iu');
+      var cut = head.test(s) ? s.replace(head, '') : tail.test(s) ? s.replace(tail, '') : null;
+      if (cut !== null && cut.trim()) { s = cut; due = shiftDay(today, SPOKEN_DAYS[i][1]); }
+    }
+    s = s.trim();
+    return { title: s.charAt(0).toUpperCase() + s.slice(1), due: due };
+  }
+  function shiftDay(day, n) {
+    var p = String(day).split('-'), d = new Date(+p[0], +p[1] - 1, +p[2] + n);
+    return d.getFullYear() + '-' + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate();
+  }
+
   /* ---------- голос ---------- */
   var Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   var active = null;
@@ -184,8 +212,11 @@
     return true;
   }
 
+  /** Зупинити запис, якщо він іде (закрили вікно, натиснули «Назад»). */
+  function stopListening() { if (active) active.stop(); }
+
   window.SpravyLingo = {
-    detect: detect, plan: plan, proofread: proofread, applyFixes: applyFixes, translations: translations, cached: cached, translateTo: translateTo,
-    canListen: !!Rec, listen: listen, NAMES: { uk: 'UA', en: 'EN', es: 'ES' }
+    detect: detect, plan: plan, proofread: proofread, applyFixes: applyFixes, spokenTask: spokenTask, translations: translations, cached: cached, translateTo: translateTo,
+    canListen: !!Rec, listen: listen, stopListening: stopListening, NAMES: { uk: 'UA', en: 'EN', es: 'ES' }
   };
 })();

@@ -39,5 +39,32 @@
       "type": "image/svg+xml",
       "purpose": "any"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Надиктувати справу",
+      "short_name": "Голосом",
+      "description": "Одразу слухає й додає справу",
+      "url": "./?voice=1",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Нове завдання",
+      "short_name": "Нове",
+      "url": "./?add=1",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }
