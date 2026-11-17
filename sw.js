@@ -55,40 +55,54 @@ self.addEventListener('fetch', function (e) {
   // власні сторінки й service worker: не підміняємо їх оболонкою «Справ».
   if (url.pathname.indexOf('/mathhub/') === 0) return;
 
-  var page = req.mode === 'navigate';
-  e.respondWith(fresh(page ? new Request('./', { cache: 'no-cache' }) : req, page));
+  if (req.mode === 'navigate') {
+    e.respondWith(fresh(new Request('./', { cache: 'no-cache' }), true, false).then(function (r) {
+      if (r.net && e.resultingClientId) netTabs[e.resultingClientId] = 1;
+      return r.res;
+    }));
+    return;
+  }
+  e.respondWith(fresh(req, false, !!netTabs[e.clientId]).then(function (r) { return r.res; }));
 });
+
+/* Вкладки, чию сторінку взято з мережі. Їхні скрипти теж беремо з мережі,
+   хай і повільної: інакше після викладки нова сторінка могла зібратися зі
+   старим lingo.js із кешу, і нові можливості тихо зникали. Кеш для них —
+   лише коли мережа зовсім не відповіла. */
+var netTabs = {};
 
 /**
  * Мережа з обмеженням часу; вдале — одразу в кеш. Не встигла чи немає
  * інтернету — збережена копія. Для сторінки ключ кешу один ('./'): з
  * будь-якою адресою на сайті відкривається той самий застосунок.
+ * patient — не підміняти кешем через таймер, чекати мережу.
+ * Результат: { res, net } — відповідь і чи прийшла вона з мережі.
  */
-function fresh(req, page) {
+function fresh(req, page, patient) {
   return new Promise(function (resolve) {
     var done = false;
     function fromCache() {
       caches.match(req, { ignoreSearch: page }).then(function (hit) {
         if (done) return;
-        if (hit) { done = true; resolve(hit); }
+        if (hit) { done = true; resolve({ res: hit, net: false }); }
       });
     }
-    var timer = setTimeout(fromCache, NET_TIMEOUT);
+    var timer = patient ? null : setTimeout(fromCache, NET_TIMEOUT);
     fetch(req, { cache: 'no-cache' }).then(function (res) {
       clearTimeout(timer);
       if (res && res.ok && res.type === 'basic' && !res.redirected) {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(req, copy); });
       }
-      if (!done) { done = true; resolve(res); }
+      if (!done) { done = true; resolve({ res: res, net: true }); }
     }).catch(function () {
       clearTimeout(timer);
       caches.match(req, { ignoreSearch: page }).then(function (hit) {
         if (done) return;
         done = true;
-        resolve(hit || new Response('Немає зв\'язку, а збереженої копії ще немає. Відкрийте «Справи» з інтернетом один раз.', {
+        resolve({ net: false, res: hit || new Response('Немає зв\'язку, а збереженої копії ще немає. Відкрийте «Справи» з інтернетом один раз.', {
           status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-        }));
+        }) });
       });
     });
   });
