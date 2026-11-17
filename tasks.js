@@ -145,6 +145,7 @@
   }
   function plural(n) { return forms(n, 'завдання', 'завдання', 'завдань'); }
 
+  var PHOTO_MAX = 12;      // фото на завдання
   function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3); }
 
   /* Капс у назвах. Абревіатури лишаються великими, відомі назви — як пишуться. */
@@ -196,6 +197,7 @@
     knot: '<path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5H4.5z"/><path d="M10 9.2a2 2 0 113.2 1.6c-.8.5-1.2.9-1.2 1.7"/><circle cx="12" cy="14.2" r=".5" fill="currentColor"/>',
     play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
+    image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5L5 19.5"/>',
     cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>',
     lang: '<path d="M3.5 5.5h9M8 3.5v2M5 5.5c.9 3.2 3.2 5.6 6.5 7M11 5.5c-.9 3.2-3.2 5.6-6.5 7"/><path d="M13 20.5l4-9 4 9M14.5 17.5h5"/>',
@@ -238,8 +240,18 @@
       start: isTime(o.start) ? o.start : '',             // час у календарі; без нього — «весь день»
       end: isTime(o.start) && isTime(o.end) && o.end > o.start ? o.end : '',
       color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : '',   // колір події; порожньо — колір списку
-      est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0)))   // скільки хвилин займе, 0 — не оцінено
+      est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0))),   // скільки хвилин займе, 0 — не оцінено
+      images: mkImages(o.images)                         // фото: файли у сховищі, тут лише шлях і розмір
     };
+  }
+
+  /** Фото завдання: [{ path: 'uid/назва.webp', w, h }]; чуже й биті записи відкидаються. */
+  function mkImages(a) {
+    return (Array.isArray(a) ? a : []).filter(function (x) {
+      return x && typeof x.path === 'string' && /^[\w-]+\/[\w-]+\.(webp|jpg|png)$/.test(x.path);
+    }).slice(0, PHOTO_MAX).map(function (x) {
+      return { path: x.path, w: Math.max(0, Math.round(Number(x.w) || 0)), h: Math.max(0, Math.round(Number(x.h) || 0)) };
+    });
   }
 
   function mkList(o) {
@@ -469,7 +481,7 @@
           throw expired('Сесія втратила чинність. Увійдіть знову');
         }
         return res.json().then(function (j) {
-          var next = { access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || now.email };
+          var next = { access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || now.email, uid: (j.user && j.user.id) || now.uid || '' };
           setSess(next);
           return next;
         });
@@ -488,7 +500,7 @@
   function expired(msg) { var e = new Error(msg); e.expired = true; return e; }
 
   function authFetch(path, opts) {
-    var headers = { apikey: cfg.anonKey, 'Content-Type': 'application/json' };
+    var headers = Object.assign({ apikey: cfg.anonKey, 'Content-Type': 'application/json' }, opts.headers);
     var s = sess();
     if (s && s.access_token) headers.Authorization = 'Bearer ' + s.access_token;
     return fetch(BASE + path, { method: opts.method || 'GET', headers: headers, body: opts.body });
@@ -531,7 +543,7 @@
           if (res.status >= 500) throw new Error('Сервер бази зараз не відповідає. Спробуйте за хвилину');
           throw new Error(j.error_description || j.msg || j.message || 'Не вдалося увійти');
         }
-        setSess({ access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || email });
+        setSess({ access_token: j.access_token, refresh_token: j.refresh_token, email: (j.user && j.user.email) || email, uid: (j.user && j.user.id) || '' });
       });
     });
   }
@@ -1140,6 +1152,7 @@
       out.push(h('span', { class: 'chip' }, svg(I.repeat, 14), REPEATS[t.repeat]));
     }
     if (t.est && !t.done) out.push(h('span', { class: 'chip', title: 'Скільки часу займе' }, svg(I.hourglass, 14), estLabel(t.est)));
+    if (t.images.length) out.push(h('span', { class: 'chip photos', title: 'Фото' }, svg(I.image, 14), String(t.images.length)));
     var subs = childrenOf(t.id);
     if (subs.length && !t.parentId && !t.done && showList) {
       out.push(h('span', { class: 'chip' }, svg(I.sub, 14), subs.filter(function (s) { return s.done; }).length + '/' + subs.length));
@@ -1712,6 +1725,148 @@
 
   /* ---------- картка завдання ---------- */
 
+  /* ============================================================
+     Фото в завданні
+     Файли лежать у приватному сховищі Supabase (кошик spravy, тека
+     користувача), у завданні — лише шлях і розмір. Перед відправкою
+     зображення стискаємо: скрін на 2–5 МБ стає 150–400 КБ.
+     ============================================================ */
+
+  var PHOTO_SIDE = 1600;     // довша сторона після стискання, px
+  var photoUrls = {};        // шлях → blob-адреса (щоб не тягнути те саме вдруге)
+
+  /** id користувача: з входу, а для старих сесій — з токена. */
+  function userId() {
+    var s = sess();
+    if (s && s.uid) return s.uid;
+    try { return JSON.parse(atob(s.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub || ''; } catch (e) { return ''; }
+  }
+
+  /** Стиснути зображення: Promise<{ blob, w, h, ext }>. */
+  function shrink(file) {
+    return createImageBitmap(file).then(function (img) {
+      var k = Math.min(1, PHOTO_SIDE / Math.max(img.width, img.height));
+      var w = Math.round(img.width * k), hh = Math.round(img.height * k);
+      var c = document.createElement('canvas');
+      c.width = w; c.height = hh;
+      c.getContext('2d').drawImage(img, 0, 0, w, hh);
+      if (img.close) img.close();
+      return new Promise(function (res, rej) {
+        c.toBlob(function (b) {
+          if (!b) return rej(new Error('не вдалося стиснути'));
+          if (b.type === 'image/webp') return res({ blob: b, w: w, h: hh, ext: 'webp' });
+          c.toBlob(function (j) { j ? res({ blob: j, w: w, h: hh, ext: 'jpg' }) : rej(new Error('не вдалося стиснути')); }, 'image/jpeg', 0.85);
+        }, 'image/webp', 0.82);
+      });
+    });
+  }
+
+  function photoUrl(path) {
+    if (!photoUrls[path]) {
+      photoUrls[path] = api('/storage/v1/object/authenticated/spravy/' + path)
+        .then(function (r) { return r.blob(); })
+        .then(function (b) { return URL.createObjectURL(b); });
+      photoUrls[path].catch(function () { delete photoUrls[path]; });   // наступного разу спробуємо знову
+    }
+    return photoUrls[path];
+  }
+
+  /** Додати фото до завдання. Повертає Promise, що завершується після запису. */
+  function addPhotos(id, list) {
+    var imgs = [].filter.call(list || [], function (f) { return /^image\//.test(f.type); });
+    var t = db.tasks[id];
+    if (!t || !imgs.length) return Promise.resolve();
+    var room = PHOTO_MAX - t.images.length;
+    if (room <= 0) { toast('У завданні вже ' + PHOTO_MAX + ' фото: більше не влазить'); return Promise.resolve(); }
+    if (!userId()) { toast('Щоб додати фото, треба увійти'); return Promise.resolve(); }
+    imgs = imgs.slice(0, room);
+    pendingPhotos[id] = (pendingPhotos[id] || 0) + imgs.length;
+    paintPending(id);
+    return Promise.all(imgs.map(function (f) {
+      return shrink(f).then(function (x) {
+        var path = userId() + '/' + uid() + '.' + x.ext;
+        return api('/storage/v1/object/spravy/' + path, { method: 'POST', body: x.blob, headers: { 'Content-Type': x.blob.type } }).then(function () {
+          photoUrls[path] = Promise.resolve(URL.createObjectURL(x.blob));
+          var cur = db.tasks[id];
+          if (cur) { cur.images = cur.images.concat({ path: path, w: x.w, h: x.h }); commit(); }
+        });
+      }).catch(function (e) {
+        toast(e && e.name === 'TypeError' ? 'Фото не додано: немає зв\'язку' : 'Фото не додано: ' + ((e && e.message) || 'помилка'));
+      }).then(function () { pendingPhotos[id]--; paintPending(id); });
+    }));
+  }
+  var pendingPhotos = {};   // id завдання → скільки фото ще летить
+  function paintPending(id) {
+    var box = document.querySelector('.drawer .photos');
+    if (!box || drawerTask !== id) return;
+    [].forEach.call(box.querySelectorAll('.photo.wait'), function (n) { n.remove(); });
+    for (var i = 0; i < (pendingPhotos[id] || 0); i++) box.insertBefore(h('span', { class: 'photo wait', 'aria-label': 'Завантаження' }), box.lastChild);
+  }
+
+  function removePhoto(id, path) {
+    var t = db.tasks[id];
+    if (!t) return;
+    t.images = t.images.filter(function (x) { return x.path !== path; });
+    commit();
+    api('/storage/v1/object/spravy/' + path, { method: 'DELETE' }).catch(function () { /* файл без посилання нікому не видно */ });
+  }
+
+  /** Рядок мініатюр у картці + кнопка «Додати фото». */
+  function photoField(t) {
+    var input = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
+    input.addEventListener('change', function () { addPhotos(t.id, input.files); input.value = ''; });
+    var box = h('div', { class: 'photos' },
+      t.images.map(function (x, i) {
+        var img = h('img', { alt: 'Фото ' + (i + 1), width: x.w || null, height: x.h || null, decoding: 'async' });
+        photoUrl(x.path).then(function (u) { img.src = u; }, function () { img.parentNode && img.parentNode.classList.add('broken'); });
+        return h('button', { type: 'button', class: 'photo', 'aria-label': 'Відкрити фото ' + (i + 1), onclick: function () { viewPhoto(t.id, x.path); } }, img);
+      }),
+      h('button', { type: 'button', class: 'photo add', onclick: function () { input.click(); } }, svg(I.image, 20), h('span', {}, 'Додати фото'), input));
+    setTimeout(function () { paintPending(t.id); });
+    return h('div', { class: 'field' },
+      h('span', { class: 'field-label' }, 'Фото', mobileMq.matches ? null : h('span', { class: 'hint' }, ' · можна вставити скрін: Ctrl+V')),
+      box);
+  }
+
+  /** Фото на весь екран: закрити (Escape, клік повз) або видалити. */
+  function viewPhoto(id, path) {
+    var del = h('button', { type: 'button', class: 'btn danger' }, 'Видалити');
+    var img = h('img', { alt: 'Фото' });
+    var view = h('div', { class: 'photo-view', role: 'dialog', 'aria-label': 'Фото' },
+      img,
+      h('div', { class: 'photo-bar' },
+        del,
+        h('button', { type: 'button', class: 'btn', onclick: function () { close(); } }, 'Закрити')));
+    photoUrl(path).then(function (u) { img.src = u; });
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }
+    function close() { view.remove(); document.removeEventListener('keydown', onKey, true); }
+    view.addEventListener('click', function (e) { if (e.target === view) close(); });
+    del.addEventListener('click', function () {
+      if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'Точно видалити?'; return; }
+      close(); removePhoto(id, path);
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(view);
+    view.querySelector('.btn:not(.danger)').focus();
+  }
+
+  // скрін із буфера (Ctrl+V) чи файл, перетягнутий на картку
+  document.addEventListener('paste', function (e) {
+    if (!drawerTask || !e.clipboardData) return;
+    var f = [].filter.call(e.clipboardData.files || [], function (x) { return /^image\//.test(x.type); });
+    if (!f.length) return;           // звичайний текст вставляється як завжди
+    e.preventDefault();
+    addPhotos(drawerTask, f);
+  });
+  document.addEventListener('dragover', function (e) {
+    if (drawerTask && e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], 'Files') >= 0 && e.target.closest && e.target.closest('.drawer')) e.preventDefault();
+  });
+  document.addEventListener('drop', function (e) {
+    if (!drawerTask || !e.dataTransfer || !e.dataTransfer.files.length || !(e.target.closest && e.target.closest('.drawer'))) return;
+    e.preventDefault();
+    addPhotos(drawerTask, e.dataTransfer.files);
+  });
+
   var drawerStamp = '';
   function stampOf(t) { return t.id + ':' + JSON.stringify(t) + childrenOf(t.id).map(function (c) { return c.title + c.done; }).join(); }
 
@@ -1721,7 +1876,7 @@
     drawerTask = null; drawerStamp = '';
     if (!fromBack) popOverlay('drawer');
     // порожнє, щойно створене кнопкою «Нове завдання», не лишаємо
-    if (t && !t.title.trim() && !t.notes.trim()) {
+    if (t && !t.title.trim() && !t.notes.trim() && !t.images.length) {
       childrenOf(t.id).forEach(function (c) { delete db.tasks[c.id]; });
       delete db.tasks[t.id];
       commit();
@@ -1802,6 +1957,7 @@
               h('button', { type: 'button', class: 'btn', onclick: function () { openHelp(t); } }, svg(I.knot, 16), ' Що заважає?'))
           : h('button', { type: 'button', class: 'quiet-link', onclick: function () { openHelp(t); } }, svg(I.knot, 16), 'Не можу взятися?'),
         h('div', { class: 'field' }, h('label', { for: 'd-notes' }, 'Нотатки'), notes),
+        photoField(t),
         h('div', { class: 'row2' },
           h('div', { class: 'field' }, h('label', { for: 'd-due' }, 'Дата'), due),
           h('div', { class: 'field' }, h('label', { for: 'd-rep' }, 'Повтор'), rep)),

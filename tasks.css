@@ -721,3 +721,18 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .dp-foot { display: flex; justify-content: space-between; margin-top: .5rem; }
 .dp-link { color: var(--accent); padding: .35rem .5rem; border-radius: .5rem; font-weight: 500; }
 .dp-link:hover { background: var(--accent-soft); }
+
+/* ---------- фото в завданні ---------- */
+.field-label .hint { text-transform: none; letter-spacing: 0; }
+.photos { display: flex; flex-wrap: wrap; gap: .5rem; }
+.photo { width: 5.5rem; height: 5.5rem; border-radius: .75rem; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line); padding: 0; flex: none; }
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; color: var(--muted); font-size: .75rem; border-style: dashed; }
+.photo.add:hover { color: var(--accent); border-color: var(--accent); }
+.photo.wait { position: relative; }
+.photo.wait::after { content: ""; position: absolute; inset: calc(50% - .7rem); border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+.photo.broken { opacity: .5; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.photo-view { position: fixed; inset: 0; z-index: 95; background: rgba(0, 0, 0, .86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 1rem; }
+.photo-view img { max-width: 100%; max-height: calc(100% - 4.5rem); object-fit: contain; border-radius: .5rem; }
+.photo-bar { display: flex; gap: .75rem; }
