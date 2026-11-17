@@ -117,6 +117,48 @@
     return p ? translate(text, p.from, to) : Promise.resolve(text);   // текст уже цією мовою
   }
 
+  /* ---------- граматика й правопис: LanguageTool ----------
+     api.languagetool.org — відкритий, без ключа, з CORS; до 20 запитів на
+     хвилину й 20 КБ тексту. Знає українську, англійську й іспанську. */
+  var LT = 'https://api.languagetool.org/v2/check';
+  var LT_LANG = { uk: 'uk-UA', en: 'en-US', es: 'es' };
+
+  /** Чи брати правку: лише з варіантом заміни, без «типографіки» й довгого тире. */
+  function usable(m) {
+    var r = m.replacements && m.replacements[0] && m.replacements[0].value;
+    var cat = m.rule && m.rule.category && m.rule.category.id;
+    return typeof r === 'string' && cat !== 'TYPOGRAPHY' && r.indexOf('—') < 0;
+  }
+
+  /** Застосувати правки до тексту. Чиста функція: text + matches LanguageTool →
+      { text, parts: [{ text, fixed }], count }. Правки, що перекриваються, пропускаємо. */
+  function applyFixes(text, matches) {
+    var src = String(text || ''), parts = [], pos = 0, count = 0;
+    (matches || []).filter(usable).slice().sort(function (a, b) { return a.offset - b.offset; }).forEach(function (m) {
+      if (m.offset < pos || m.offset + m.length > src.length) return;
+      if (m.offset > pos) parts.push({ text: src.slice(pos, m.offset), fixed: false });
+      parts.push({ text: m.replacements[0].value, fixed: true });
+      pos = m.offset + m.length;
+      count++;
+    });
+    if (pos < src.length) parts.push({ text: src.slice(pos), fixed: false });
+    return { text: parts.map(function (p) { return p.text; }).join(''), parts: parts, count: count };
+  }
+
+  /** Перевірити текст: Promise<{ text, parts, count }>; помилка — з людським поясненням. */
+  function proofread(text) {
+    var q = String(text || '');
+    if (!q.trim()) return Promise.resolve(applyFixes(q, []));
+    var d = detect(q);
+    var body = 'text=' + encodeURIComponent(q) + '&language=' + (d.mixed ? 'auto' : LT_LANG[d.lang]);
+    return fetch(LT, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body }).then(function (res) {
+      if (!res.ok) throw new Error(res.status === 429 ? 'забагато перевірок поспіль, спробуйте за хвилину' : 'сервіс перевірки не відповів');
+      return res.json();
+    }, function () { throw new Error('немає зв\'язку з сервісом перевірки'); }).then(function (j) {
+      return applyFixes(q, j && j.matches);
+    });
+  }
+
   /* ---------- голос ---------- */
   var Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   var active = null;
@@ -143,7 +185,7 @@
   }
 
   window.SpravyLingo = {
-    detect: detect, plan: plan, translations: translations, cached: cached, translateTo: translateTo,
+    detect: detect, plan: plan, proofread: proofread, applyFixes: applyFixes, translations: translations, cached: cached, translateTo: translateTo,
     canListen: !!Rec, listen: listen, NAMES: { uk: 'UA', en: 'EN', es: 'ES' }
   };
 })();

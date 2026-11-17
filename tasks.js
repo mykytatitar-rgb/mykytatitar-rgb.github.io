@@ -197,6 +197,7 @@
     knot: '<path d="M4.5 5.5h15v10h-9l-4.5 3.5v-3.5H4.5z"/><path d="M10 9.2a2 2 0 113.2 1.6c-.8.5-1.2.9-1.2 1.7"/><circle cx="12" cy="14.2" r=".5" fill="currentColor"/>',
     play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
+    spell: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13.5 15.5l2.5 2.5 4.5-5"/>',
     image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5L5 19.5"/>',
     cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>',
@@ -1942,6 +1943,7 @@
         title,
         isShouting(t.title) ? h('button', { type: 'button', class: 'decaps', onclick: function () { set('title', calm(t.title)); } }, 'Аа  Прибрати капс') : null,
         t.title ? translateBox(t) : null,
+        t.title ? fixBox(t) : null,
         // матриця й головне на день — двома перемикачами, без окремих полів
         parent || t.done ? null : h('div', { class: 'd-flags' },
           h('button', { type: 'button', class: 'flag' + (t.starred ? ' on' : ''), 'aria-pressed': String(t.starred),
@@ -2676,6 +2678,49 @@
       }, function (e) {
         if (box.isConnected) box.replaceChildren(h('div', { class: 'tr-preview tip-err' }, 'Не вдалося перекласти: ' + e.message + '.'),
           h('button', { type: 'button', class: 'link-btn', onclick: pick }, 'Спробувати ще'));
+      });
+    }
+    start();
+    return box;
+  }
+
+  /** «Виправити помилки»: показати виправлений текст і замінити лише за згодою. */
+  function fixBox(t) {
+    var L = window.SpravyLingo;
+    if (!L || !L.proofread) return null;
+    var box = h('div', { class: 'tr-card fix-card' });
+    // кнопка лишається на місці: текст можуть змінити й перевірити знову
+    function start(note) {
+      box.replaceChildren(h('button', { type: 'button', class: 'quiet-link', onclick: check }, svg(I.spell, 16, 1.7), 'Виправити помилки'),
+        note ? h('span', { class: 'fix-note' }, note) : null);
+    }
+    function marked(r) {
+      return r.parts.map(function (p) { return p.fixed ? h('mark', {}, p.text) : p.text; });
+    }
+    function check() {
+      var title = t.title, notes = t.notes;
+      box.replaceChildren(h('div', { class: 'tr-preview muted' }, 'Перевіряю…'));
+      Promise.all([L.proofread(title), L.proofread(notes)]).then(function (r) {
+        if (!box.isConnected) return;
+        if (!r[0].count && !r[1].count) {
+          start('Помилок не знайдено');
+          return;
+        }
+        box.replaceChildren(h('div', { class: 'tr-preview fix-preview' },
+          h('b', {}, 'Виправлень: ' + (r[0].count + r[1].count)),
+          h('div', { class: 'tr-text' }, marked(r[0])),
+          r[1].text ? h('div', { class: 'tr-notes' }, marked(r[1])) : null,
+          h('div', { class: 'help-row' },
+            h('button', { type: 'button', class: 'btn primary', onclick: function () {
+              // текст могли змінити, поки йшла перевірка: правимо лише те, що перевіряли
+              if (t.title === title) t.title = r[0].text;
+              if (t.notes === notes) t.notes = r[1].text;
+              commit();
+              toast('Виправлено');
+            } }, 'Виправити'),
+            h('button', { type: 'button', class: 'btn', onclick: function () { start(); } }, 'Скасувати'))));
+      }, function (e) {
+        if (box.isConnected) start('Не вдалося перевірити: ' + e.message);
       });
     }
     start();

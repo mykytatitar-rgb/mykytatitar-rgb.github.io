@@ -736,3 +736,9 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .photo-view { position: fixed; inset: 0; z-index: 95; background: rgba(0, 0, 0, .86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: 1rem; }
 .photo-view img { max-width: 100%; max-height: calc(100% - 4.5rem); object-fit: contain; border-radius: .5rem; }
 .photo-bar { display: flex; gap: .75rem; }
+
+/* ---------- виправлення помилок ---------- */
+.fix-preview mark { background: var(--accent-soft); color: inherit; border-radius: .25rem; padding: 0 .1rem; box-shadow: inset 0 -1.5px 0 var(--accent); }
+.fix-card { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.fix-card > .tr-preview { flex-basis: 100%; }
+.fix-note { color: var(--muted); font-size: .9rem; }
