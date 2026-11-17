@@ -1768,7 +1768,7 @@
     var notes = h('textarea', { id: 'd-notes', placeholder: 'Деталі, посилання, кроки' });
     notes.value = t.notes;
     notes.addEventListener('input', function () { typed('notes', notes.value); });
-    var due = h('input', { id: 'd-due', type: 'date', value: t.due || '', onchange: function (e) { setDue(t, e.target.value); commit(); } });
+    var due = window.SpravyDate.field('d-due', t.due || '', function (v) { setDue(t, v); commit(); });
     var rep = h('select', { id: 'd-rep', onchange: function (e) { t.repeat = e.target.value; if (t.repeat !== 'none' && !t.due) t.due = today(); commit(); } },
       Object.keys(REPEATS).map(function (k) { return h('option', { value: k, selected: t.repeat === k }, REPEATS[k]); }));
     var list = h('select', { id: 'd-list', onchange: function (e) {
@@ -1956,9 +1956,9 @@
     var bToday = chip(svg(I.sun, 16), 'Сьогодні', function () { s.due = s.due === t0 ? '' : t0; paint(); });
     var bTomorrow = chip(null, 'Завтра', function () { s.due = s.due === t1 ? '' : t1; paint(); });
     var dateText = h('span', {}, 'Дата');
-    var picker = h('input', { type: 'date', class: 'chip-picker', 'aria-label': 'Обрати дату' });
-    picker.addEventListener('change', function () { s.due = picker.value; paint(); });
-    var bDate = h('label', { class: 'schip' }, svg(I.clock, 16), dateText, picker);
+    var bDate = h('button', { type: 'button', class: 'schip', 'aria-haspopup': 'dialog',
+      onpointerdown: function (e) { e.preventDefault(); },
+      onclick: function () { window.SpravyDate.open(bDate, s.due, function (v) { s.due = v; paint(); }); } }, svg(I.clock, 16), dateText);
     var bStar = chip(svg(I.star, 16, 1.8), 'Важливо', function () { s.starred = !s.starred; paint(); });
     var bFocus = chip(svg(I.target, 16), 'Головне', function () {
       if (!s.focus && focusFull()) return;
@@ -1980,7 +1980,6 @@
       bTomorrow.setAttribute('aria-pressed', String(s.due === t1));
       bDate.setAttribute('aria-pressed', String(!!other));
       dateText.textContent = other ? dueLabel(s.due) : 'Дата';
-      picker.value = s.due || '';
       bStar.setAttribute('aria-pressed', String(s.starred));
       bFocus.setAttribute('aria-pressed', String(s.focus));
       bRep.setAttribute('aria-pressed', String(s.repeat !== 'none'));

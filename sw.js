@@ -5,12 +5,13 @@
    мережі немає чи вона надто повільна. Тож нова версія приходить з першим
    же відкриттям, і нічого піднімати руками не треба. */
 
-var CACHE = 'spravy-v2';
+var CACHE = 'spravy-v3';
 
 var SHELL = [
   './',
   './tasks.css',
   './tasks.js',
+  './datepick.js',
   './manifest.webmanifest',
   './icon.svg',
   './icon-192.png',
