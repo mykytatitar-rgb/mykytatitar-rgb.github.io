@@ -242,7 +242,8 @@
       end: isTime(o.start) && isTime(o.end) && o.end > o.start ? o.end : '',
       color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : '',   // колір події; порожньо — колір списку
       est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0))),   // скільки хвилин займе, 0 — не оцінено
-      images: mkImages(o.images)                         // фото: файли у сховищі, тут лише шлях і розмір
+      images: mkImages(o.images),                        // фото: файли у сховищі, тут лише шлях і розмір
+      rank: Math.max(0, Math.round(Number(o.rank) || 0))  // місце в квадранті матриці; 0 — не переставляли
     };
   }
 
@@ -1190,6 +1191,9 @@
   function taskRow(t, opts) {
     opts = opts || {};
     var drag = !!opts.drag;
+    // куди кладемо перетягнуте: у списку — порядок списку, у матриці — порядок квадранта
+    var move = opts.move || function (id, ref, after) { moveTask(id, t.listId, ref, after); };
+    var accepts = opts.accepts || function () { return true; };
     var row = h('div', {
       class: 'task' + (t.done ? ' done' : '') + (opts.sub ? ' sub' : ''),
       draggable: drag ? 'true' : null,
@@ -1204,17 +1208,17 @@
         if (renderLater) { renderLater = false; render(); }
       } : null,
       ondragover: drag ? function (e) {
-        if (!dragId) return;
+        if (!dragId || !accepts(dragId)) return;
         e.preventDefault(); e.stopPropagation(); clearDrop();
         var r = row.getBoundingClientRect();
         row.classList.add(e.clientY > r.top + r.height / 2 ? 'drop-after' : 'drop-before');
       } : null,
       ondrop: drag ? function (e) {
-        if (!dragId) return;
+        if (!dragId || !accepts(dragId)) return;
         e.preventDefault(); e.stopPropagation();
         var after = row.classList.contains('drop-after');
         clearDrop();
-        moveTask(dragId, t.listId, t.id, after);
+        move(dragId, t.id, after);
       } : null
     },
       h('button', { type: 'button', class: 'check', 'aria-label': t.done ? 'Позначити невиконаним' : 'Позначити виконаним', onclick: function (e) {
@@ -1236,7 +1240,7 @@
     // телефон: рядок у обгортці, під якою видно, що зробить свайп
     var wrap = h('div', { class: 'srow', 'data-id': t.id, 'data-top': opts.lift ? '1' : null,
       'data-ldone': t.done ? 'Повернути' : 'Виконано', 'data-ldel': 'Видалити' }, row);
-    touchable(wrap, row, t, !!opts.lift);
+    touchable(wrap, row, t, !!opts.lift, move);
     return wrap;
   }
 
@@ -1254,11 +1258,11 @@
   }, true);
   document.addEventListener('contextmenu', function (e) { if (gest) e.preventDefault(); }, true);
 
-  function touchable(wrap, row, t, liftable) {
+  function touchable(wrap, row, t, liftable, move) {
     wrap.addEventListener('touchstart', function (e) {
       if (e.touches.length !== 1) { cancelGesture(); return; }
       var p = e.touches[0];
-      gest = { wrap: wrap, row: row, t: t, x0: p.clientX, y0: p.clientY, cy: p.clientY, dx: 0, dy: 0, mode: 'wait', sy0: window.scrollY,
+      gest = { wrap: wrap, row: row, t: t, move: move, x0: p.clientX, y0: p.clientY, cy: p.clientY, dx: 0, dy: 0, mode: 'wait', sy0: window.scrollY,
         timer: liftable ? setTimeout(lift, 380) : null };
     }, { passive: true });
     wrap.addEventListener('touchmove', function (e) {
@@ -1347,7 +1351,7 @@
       wrap.classList.remove('lifted');
       wrap.style.transform = '';
       var ref = g.target && g.target.dataset.id;
-      if (ref && ref !== g.t.id) moveTask(g.t.id, g.t.listId, ref, g.after);
+      if (ref && ref !== g.t.id) g.move(g.t.id, ref, g.after);
     }
     if (renderLater) { renderLater = false; render(); }
   }
@@ -1695,6 +1699,24 @@
      терміново. Щоб перекласти справу, досить зірочки чи дати. */
   var QUAD_SHOWN = 6;
 
+  /** Порядок у квадранті: спершу переставлені вручну (rank), далі решта — як раніше (за датою; «Решта» — за списком). */
+  function quadSorted(list, q) {
+    var base = q === 4 ? sorted(list, 'mine') : sorted(list, 'date');
+    return base.filter(function (t) { return t.rank; }).sort(function (a, b) { return a.rank - b.rank; })
+      .concat(base.filter(function (t) { return !t.rank; }));
+  }
+  /** Поставити id перед/після ref у квадранті arr і пронумерувати всіх 1..n. Порядок у списках не змінюється. */
+  function rankIn(arr, id, ref, after) {
+    var t = db.tasks[id];
+    if (!t || id === ref) return;
+    var rest = arr.filter(function (x) { return x.id !== id; });
+    var i = rest.findIndex(function (x) { return x.id === ref; });
+    if (i < 0) return;
+    rest.splice(i + (after ? 1 : 0), 0, t);
+    rest.forEach(function (x, n) { x.rank = n + 1; });
+    commit();
+  }
+
   function renderMatrix(b) {
     var by = { 1: [], 2: [], 3: [], 4: [] };
     tasks().forEach(function (t) { if (isOpenNow(t)) by[quadrant(t)].push(t); });
@@ -1705,8 +1727,11 @@
       4: 'Порожньо.'
     };
     ui.qOpen = ui.qOpen || {};
+    var phone = mobileMq.matches;
     function quad(q) {
-      var arr = q === 4 ? sorted(by[q], 'mine') : sorted(by[q], 'date');
+      var arr = quadSorted(by[q], q);
+      function move(id, ref, after) { rankIn(arr, id, ref, after); }
+      function accepts(id) { return arr.some(function (x) { return x.id === id; }); }   // лише в межах свого квадранта
       var open = !!ui.qOpen[q];
       var shown = open ? arr : arr.slice(0, QUAD_SHOWN);
       return h('section', { class: 'quad q' + q, 'aria-label': QUADS[q].name },
@@ -1715,7 +1740,7 @@
           h('span', { class: 'quad-name' }, QUADS[q].name),
           arr.length ? h('span', { class: 'pill' }, arr.length) : null),
         h('div', { class: 'quad-hint' }, QUADS[q].hint),
-        arr.length ? shown.map(function (t) { return taskRow(t, { showList: true }); }) : h('div', { class: 'empty' }, EMPTY[q]),
+        arr.length ? shown.map(function (t) { return taskRow(t, { showList: true, drag: !phone, lift: phone, move: move, accepts: accepts }); }) : h('div', { class: 'empty' }, EMPTY[q]),
         arr.length > QUAD_SHOWN ? h('button', { type: 'button', class: 'more', onclick: function () { ui.qOpen[q] = !open; saveUi(); render(); } },
           open ? 'Згорнути' : 'Показати всі ' + arr.length) : null);
     }
