@@ -760,3 +760,14 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .vcap-ok { color: var(--accent); font-weight: 600; }
 .vcap-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: .6rem; margin-top: .3rem; }
 .vcap-btns .btn { min-height: 2.9rem; padding: 0 1.1rem; }
+
+/* ---------- виконавча дисфункція: перший крок, оцінка часу, ліміт зірочок ---------- */
+.first-step { align-self: stretch; display: flex; flex-direction: column; gap: .45rem; padding: .8rem .9rem; border-radius: .9rem; background: var(--accent-soft); }
+.first-step label { font-weight: 600; }
+.first-step-row { display: flex; gap: .5rem; }
+.first-step-row input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: .7rem; padding: .55rem .7rem; }
+.now-est { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; color: var(--muted); font-size: .92rem; }
+.now-est button { padding: .35rem .7rem; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+.now-est button:hover { border-color: var(--accent); color: var(--accent); }
+.est-pick { align-items: center; color: var(--muted); }
+.star-layer { position: fixed; inset: 0; z-index: 90; }   /* над карткою завдання, з якої теж ставлять зірочку */

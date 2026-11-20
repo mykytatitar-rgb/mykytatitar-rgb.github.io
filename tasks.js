@@ -72,6 +72,7 @@
       reframe: 'Коли справ багато, мозок тримає їх усі одразу й не обирає жодної. Найкращу обирати не треба: візьміть цю на 5 хвилин, решта почекає.' }
   };
   var BLOCKER_ORDER = ['big', 'bored', 'unclear', 'overwhelm', 'mood', 'perfect', 'fail', 'always', 'must', 'others'];
+  var STAR_MAX = 7;       // важливих водночас: коли їх 19, зірочка вже нічого не виділяє
   var FOCUS_MAX = 3;      // головних справ на день: більше — і вони перестають бути головними
 
   /* Як зробити нудну справу цікавішою: інтерес, виклик, новизна, терміновість
@@ -835,6 +836,34 @@
     return t;
   }
 
+  /** Зірочка: зняти — завжди; поставити — якщо важливих менше STAR_MAX, інакше спершу обрати, з якої зняти. */
+  function toggleStar(t) {
+    if (t.starred) { t.starred = false; commit(); return; }
+    askStar(t.title, t.id, function () { t.starred = true; commit(); });
+  }
+  function askStar(title, exceptId, apply) {
+    var on = tasks().filter(function (x) { return x.starred && !x.done && !x.parentId && x.id !== exceptId; });
+    if (on.length < STAR_MAX) { apply(); return; }
+    var layer = h('div', { class: 'star-layer' });
+    function close() { layer.remove(); document.removeEventListener('keydown', onKey, true); }
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }
+    layer.append(
+      h('div', { class: 'modal-scrim', onclick: close }),
+      h('div', { class: 'modal star-pick', role: 'dialog', 'aria-label': 'Забагато важливого' },
+        h('div', { class: 'modal-title' }, 'Важливих уже ' + on.length),
+        h('div', { class: 'modal-sub' }, 'Зірочка допомагає, лише коли їх мало. З якої зняти, щоб поставити на «' + title + '»?'),
+        h('div', { class: 'cands' }, sorted(on, 'date').map(function (x) {
+          var l = listOf(x.listId);
+          return h('button', { type: 'button', class: 'cand', onclick: function () { x.starred = false; close(); apply(); } },
+            h('span', { class: 'cand-mark' }, svg(I.star, 18, 1.8)),
+            h('span', { class: 'cand-body' }, h('span', { class: 'cand-title' }, x.title || 'Без назви'),
+              h('span', { class: 'cand-meta' }, (x.due ? dueLabel(x.due) + ' · ' : '') + (l ? l.name : ''))));
+        })),
+        h('div', { class: 'modal-foot' }, h('button', { type: 'button', class: 'btn', onclick: close }, 'Скасувати'))));
+    document.body.append(layer);
+    document.addEventListener('keydown', onKey, true);
+  }
+
   /** Головне на сьогодні: не більше трьох відкритих, інакше воно перестає бути головним. */
   function focusFull() {
     if (focusToday().filter(function (x) { return !x.done; }).length < FOCUS_MAX) return false;
@@ -1236,7 +1265,7 @@
       t.title ? h('button', { type: 'button', class: 'tr-btn', 'aria-label': 'Переклад', title: 'Переклад',
         onclick: function (e) { e.stopPropagation(); tipToggle(t, e.currentTarget); } }, svg(I.lang, 17, 1.7)) : null,
       opts.sub || t.done ? null : h('button', { type: 'button', class: 'star' + (t.starred ? ' on' : ''), 'aria-label': t.starred ? 'Прибрати зірочку' : 'Додати зірочку',
-        onclick: function () { t.starred = !t.starred; commit(); } }, svg(I.star, 19, 1.8)));
+        onclick: function () { toggleStar(t); } }, svg(I.star, 19, 1.8)));
     if (opts.touch === false || !mobileMq.matches) return row;
     // телефон: рядок у обгортці, під якою видно, що зробить свайп
     var wrap = h('div', { class: 'srow', 'data-id': t.id, 'data-top': opts.lift ? '1' : null,
@@ -1628,6 +1657,34 @@
 
   /* ---------- «Зараз»: одна справа ---------- */
 
+  /* Розмита, велика чи застрягла справа без кроків — це ціль, а не дія: мозок не бачить,
+     з чого почати. Просимо назвати першу фізичну дію на дві хвилини. */
+  var VAGUE = /^(to\s+)?(study|learn|research|prepare|figure|adjust|work on|review|plan|organi[sz]e|clean|write|finish|start|do|read|practi[cs]e)\b|^(вивчити|вчити|розібратися|розібрати|підготувати|прибрати|написати|доробити|зробити|спланувати|дослідити|подумати|організувати|прочитати|повторити)/i;
+  function needsStep(t) {
+    return !childrenOf(t.id).some(function (c) { return !c.done; }) && (isStuck(t) || VAGUE.test(t.title.trim()) || t.est >= 45);
+  }
+  var stepDraft = { id: '', text: '', focused: false };   // набране не зникає, коли обмін у фоні перемальовує екран
+  function firstStepBox(t) {
+    if (stepDraft.id !== t.id) stepDraft = { id: t.id, text: '', focused: false };
+    var input = h('input', { placeholder: 'Напр.: відкрити конспект і прочитати першу сторінку', autocomplete: 'off', enterkeyhint: 'done',
+      'aria-label': 'Перша дія на 2 хвилини' });
+    input.value = stepDraft.text;
+    input.addEventListener('input', function () { stepDraft.text = input.value; });
+    input.addEventListener('focus', function () { stepDraft.focused = true; });
+    input.addEventListener('blur', function () { stepDraft.focused = false; });
+    function add() {
+      var v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      stepDraft = { id: '', text: '', focused: false };
+      addTask(t.listId, v, { parentId: t.id, order: 0, starred: false, due: '' });
+    }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    if (stepDraft.focused) setTimeout(function () { input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+    return h('div', { class: 'first-step' },
+      h('label', {}, 'Яка перша дія на 2 хвилини?'),
+      h('div', { class: 'first-step-row' }, input, h('button', { type: 'button', class: 'btn', onclick: add }, 'Додати')));
+  }
+
   function renderNow(b) {
     var q = nowQueue(), t = q[0];
     var energy = h('div', { class: 'seg energy', role: 'group', 'aria-label': 'Скільки зараз сил' },
@@ -1659,7 +1716,13 @@
           h('button', { type: 'button', class: 'now-title', title: 'Відкрити картку', onclick: function () { openDrawer(t.id); } }, t.title || 'Без назви'),
           step ? h('div', { class: 'now-step' },
             h('button', { type: 'button', class: 'check', 'aria-label': 'Крок зроблено', onclick: function (e) { burst(e.currentTarget); toggleDone(step); } }),
-            h('span', {}, h('small', {}, 'Перший крок'), step.title)) : null,
+            h('span', {}, h('small', {}, 'Перший крок'), step.title)) : needsStep(t) ? firstStepBox(t) : null,
+          // без оцінки «чи влазить день» не працює — питаємо тут, одним дотиком
+          t.est ? null : h('div', { class: 'now-est', role: 'group', 'aria-label': 'Скільки часу займе' },
+            h('span', {}, 'Скільки часу?'),
+            [5, 15, 30, 60].map(function (m) {
+              return h('button', { type: 'button', onclick: function () { t.est = m; commit(); } }, estLabel(m));
+            })),
           h('button', { type: 'button', class: 'btn primary now-go', onclick: function () { startKick(t, mins); } },
             svg(I.play, 18), 'Почати · ' + estLabel(mins)),
           h('div', { class: 'now-mins' }, h('span', {}, 'або'),
@@ -1987,7 +2050,7 @@
         // матриця й головне на день — двома перемикачами, без окремих полів
         parent || t.done ? null : h('div', { class: 'd-flags' },
           h('button', { type: 'button', class: 'flag' + (t.starred ? ' on' : ''), 'aria-pressed': String(t.starred),
-            onclick: function () { set('starred', !t.starred); } }, svg(I.star, 16, 1.8), 'Важливо'),
+            onclick: function () { toggleStar(t); } }, svg(I.star, 16, 1.8), 'Важливо'),
           h('button', { type: 'button', class: 'flag' + (isFocus(t) ? ' on' : ''), 'aria-pressed': String(isFocus(t)),
             onclick: function () { toggleFocus(t); } }, svg(I.target, 16), 'Головне сьогодні'),
           h('span', { class: 'd-quad' }, isFuture(t)
@@ -2052,6 +2115,11 @@
   function showApp() {
     $('login').hidden = true;
     $('app').hidden = false;
+    // телефон: кожне нове відкриття — одразу одна справа, без вибору, куди дивитися
+    try {
+      if (mobileMq.matches && !sessionStorage.getItem('spravy.opened')) { ui.view = 'now'; saveUi(); }
+      sessionStorage.setItem('spravy.opened', '1');
+    } catch (e) { /* без sessionStorage — як раніше */ }
     if (rollHabits()) commit(); else render();
     launchShortcut();
     // жести на телефоні не видно — один раз підказуємо
@@ -2166,7 +2234,15 @@
     var bDate = h('button', { type: 'button', class: 'schip', 'aria-haspopup': 'dialog',
       onpointerdown: function (e) { e.preventDefault(); },
       onclick: function () { window.SpravyDate.open(bDate, s.due, function (v) { s.due = v; paint(); }); } }, svg(I.clock, 16), dateText);
-    var bStar = chip(svg(I.star, 16, 1.8), 'Важливо', function () { s.starred = !s.starred; paint(); });
+    // скільки часу займе — одним дотиком, поки справа свіжа в голові
+    var estBtns = [5, 15, 30, 60].map(function (m) {
+      return h('button', { type: 'button', class: 'schip', 'aria-pressed': 'false', onpointerdown: function (e) { e.preventDefault(); },
+        onclick: function () { s.est = s.est === m ? 0 : m; paint(); } }, estLabel(m));
+    });
+    var bStar = chip(svg(I.star, 16, 1.8), 'Важливо', function () {
+      if (s.starred) { s.starred = false; paint(); return; }
+      askStar(input.value.trim() || 'нове завдання', null, function () { s.starred = true; paint(); });
+    });
     var bFocus = chip(svg(I.target, 16), 'Головне', function () {
       if (!s.focus && focusFull()) return;
       s.focus = !s.focus;
@@ -2188,6 +2264,7 @@
       bDate.setAttribute('aria-pressed', String(!!other));
       dateText.textContent = other ? dueLabel(s.due) : 'Дата';
       bStar.setAttribute('aria-pressed', String(s.starred));
+      estBtns.forEach(function (b, i) { b.setAttribute('aria-pressed', String(s.est === [5, 15, 30, 60][i])); });
       bFocus.setAttribute('aria-pressed', String(s.focus));
       bRep.setAttribute('aria-pressed', String(s.repeat !== 'none'));
       rep.value = s.repeat;
@@ -2198,7 +2275,8 @@
     function save() {
       var title = input.value.trim();
       if (!title) { input.focus(); return; }
-      addTask(s.listId, title, { due: s.due, starred: s.starred, repeat: s.repeat, focus: s.focus ? today() : '' });
+      addTask(s.listId, title, { due: s.due, starred: s.starred, repeat: s.repeat, focus: s.focus ? today() : '', est: s.est || 0 });
+      s.est = 0;
       if (s.due > today()) toast('Заплановано на ' + dueLabel(s.due).toLowerCase() + ': з\'явиться в списку у свій день.');
       else if (ui.view === 'board' && s.listId !== (currentList() || {}).id) toast('Додано в «' + listOf(s.listId).name + '»');
       if (s.focus) { s.focus = false; paint(); }    // головне — поштучно, не все підряд
@@ -2211,6 +2289,7 @@
       h('div', { class: 'add-sheet', role: 'dialog', 'aria-label': 'Нове завдання' },
         h('div', { class: 'sheet-row' }, input, micFor(input)),
         h('div', { class: 'sheet-chips' }, bToday, bTomorrow, bDate, bStar, bFocus, bRep, bList),
+        h('div', { class: 'sheet-chips est-pick', role: 'group', 'aria-label': 'Скільки часу займе' }, svg(I.hourglass, 16), estBtns),
         h('div', { class: 'sheet-actions' },
           h('button', { type: 'button', class: 'btn', onclick: function () { closeSheet(); } }, 'Закрити'),
           h('button', { type: 'button', class: 'btn primary', onpointerdown: function (e) { e.preventDefault(); }, onclick: save }, 'Додати'))));
