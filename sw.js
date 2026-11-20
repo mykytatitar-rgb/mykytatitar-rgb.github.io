@@ -107,3 +107,25 @@ function fresh(req, page, patient) {
     });
   });
 }
+
+/* ---------- нагадування (Web Push) ----------
+   Сервер (функція nudge) надсилає { title, body, url, tag }: зранку, перед справою з часом,
+   увечері. Дотик відкриває потрібний екран: у вже відкритому вікні або в новому. */
+self.addEventListener('push', function (e) {
+  var d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Справи', {
+    body: d.body || '', tag: d.tag || 'spravy', icon: './icon-192.png', badge: './icon-192.png', data: { url: d.url || './' }
+  }));
+});
+
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  var url = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    var w = list[0];
+    if (!w) return self.clients.openWindow(url);
+    return w.focus().then(function () { return w.navigate ? w.navigate(url) : null; })
+      .catch(function () { return self.clients.openWindow(url); });
+  }));
+});

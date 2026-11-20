@@ -2149,6 +2149,7 @@
     } catch (e) { /* без sessionStorage — як раніше */ }
     if (rollHabits()) commit(); else render();
     launchShortcut();
+    checkPush();
     // жести на телефоні не видно — один раз підказуємо
     if (mobileMq.matches && !ui.tipGestures) {
       ui.tipGestures = true;
@@ -2157,13 +2158,76 @@
     }
   }
 
-  /** Ярлики іконки: ?voice=1 — одразу диктувати, ?add=1 — нове завдання. Один раз за відкриття. */
+  /** Ярлики іконки й посилання з нагадувань: ?voice=1 — диктувати, ?add=1 — нове завдання,
+      ?plan=1 — план на день, ?evening=1 — закрити день, ?view=now — «Зараз». Один раз за відкриття. */
   function launchShortcut() {
-    var m = /[?&](voice|add)=1/.exec(location.search);
+    var m = /[?&](voice|add|plan|evening|view)=(\w+)/.exec(location.search);
     if (!m) return;
     history.replaceState(null, '', location.pathname + location.hash);
-    setTimeout(m[1] === 'voice' ? openVoice : openSheet, 50);
+    if (m[1] === 'view') { if (m[2] === 'now') { ui.view = 'now'; saveUi(); render(); } return; }
+    setTimeout({ voice: openVoice, add: openSheet, plan: function () { openPlan(); }, evening: openEvening }[m[1]], 50);
   }
+  /* ============================================================
+     Нагадування на телефон (Web Push). Сервер (функція nudge) сам
+     вирішує, коли: о 9-й — з чого почати; за 10 хв до справи з часом;
+     о 20-й — закрити день. Тут лише підписати цей пристрій.
+     ============================================================ */
+  var pushOn = null;   // null — ще не знаємо; true / false
+  function canPush() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+  function b64u(s) {
+    var b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+    return Uint8Array.from(b, function (c) { return c.charCodeAt(0); });
+  }
+  function pushSub() { return navigator.serviceWorker.ready.then(function (r) { return r.pushManager.getSubscription(); }); }
+  function checkPush() {
+    if (!canPush() || !signedIn()) return;
+    pushSub().then(function (s) { pushOn = !!s && Notification.permission === 'granted'; renderPush(); }, function () {});
+  }
+  function enablePush() {
+    Notification.requestPermission().then(function (perm) {
+      if (perm !== 'granted') throw new Error('perm');
+      return fetch(BASE + '/functions/v1/nudge?pub=1').then(function (r) { return r.json(); });
+    }).then(function (j) {
+      return navigator.serviceWorker.ready.then(function (r) {
+        return r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(j.publicKey) });
+      });
+    }).then(function (sub) {
+      var k = sub.toJSON();
+      var tz = '';
+      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+      return rpc('push_subscribe', { p_endpoint: k.endpoint, p_p256dh: k.keys.p256dh, p_auth: k.keys.auth, p_tz: tz });
+    }).then(function () {
+      pushOn = true; renderPush();
+      toast('Нагадування увімкнено: о 9-й — з чого почати, за 10 хв до справ із часом, о 20-й — закрити день.', null, 8000);
+    }, function (e) {
+      toast(e && e.message === 'perm' ? 'Браузер не дав дозволу на сповіщення. Дозвольте їх у налаштуваннях сайту.'
+        : 'Не вдалося увімкнути нагадування' + (e && e.message ? ': ' + e.message : ''));
+    });
+  }
+  function testPush() {
+    api('/functions/v1/nudge?test=1', { method: 'POST', body: '{}' }).then(function (r) { return r.json(); }).then(function (j) {
+      toast(j && j.sent ? 'Надіслано. За кілька секунд прийде сповіщення.' : 'Сервер не знайшов цей пристрій. Вимкніть і увімкніть ще раз.');
+    }, function () { toast('Не вдалося надіслати пробне нагадування'); });
+  }
+  function disablePush() {
+    pushSub().then(function (s) {
+      if (!s) return null;
+      return rpc('push_unsubscribe', { p_endpoint: s.endpoint }).catch(function () {}).then(function () { return s.unsubscribe(); });
+    }).then(function () { pushOn = false; renderPush(); toast('Нагадування на цьому пристрої вимкнено'); });
+  }
+  function renderPush() {
+    var box = $('pushBox');
+    if (!box) return;
+    if (!canPush() || pushOn === null) { box.replaceChildren(); return; }
+    box.replaceChildren(h('div', {}, 'Нагадування'), pushOn
+      ? h('div', { class: 'push-row' }, h('span', { class: 'push-on' }, 'Увімкнено'),
+          h('button', { type: 'button', class: 'link-btn', onclick: testPush }, 'Перевірити'),
+          h('button', { type: 'button', class: 'link-btn', onclick: disablePush }, 'Вимкнути'))
+      : h('div', { class: 'push-row' },
+          h('button', { type: 'button', class: 'btn', onclick: enablePush }, 'Увімкнути'),
+          h('span', { class: 'push-hint' }, 'о 9-й, перед справами з часом, о 20-й')));
+  }
+
 
   /** Копія в браузері належить конкретному входу: увійшли іншим акаунтом — починаємо з чистого. */
   function claimLocal() {

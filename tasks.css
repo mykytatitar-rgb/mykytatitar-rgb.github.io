@@ -778,3 +778,6 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .ev-acts { display: flex; gap: .35rem; flex-wrap: wrap; }
 .ev-acts .btn { padding: .35rem .7rem; font-size: .9rem; }
 .close-day { margin-top: 1rem; }
+.push-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; margin-bottom: .4rem; }
+.push-on { color: var(--accent); font-weight: 600; }
+.push-hint { color: var(--faint); font-size: .8rem; }
