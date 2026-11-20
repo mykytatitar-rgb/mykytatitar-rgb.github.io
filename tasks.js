@@ -246,7 +246,9 @@
       est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0))),   // скільки хвилин займе, 0 — не оцінено
       images: mkImages(o.images),                        // фото: файли у сховищі, тут лише шлях і розмір
       rank: Math.max(0, Math.round(Number(o.rank) || 0)), // місце в квадранті матриці; 0 — не переставляли
-      seen: isDay(o.seen) ? o.seen : ''                    // коли справу востаннє чіпали; давно — вона йде в «Колись»
+      seen: isDay(o.seen) ? o.seen : '',                   // коли справу востаннє чіпали; давно — вона йде в «Колись»
+      habit: String(o.habit || ''),                        // у виконаної копії звички — id самої звички
+      after: String(o.after || '').slice(0, 80)            // якір звички: «після ранкової кави»
     };
   }
 
@@ -395,6 +397,35 @@
       n++;
     });
     return n;
+  }
+
+  /* ---------- звички без хрестиків і ланцюжків ----------
+     Ланцюжок, що обнуляється від одного пропуску, при СДУГ частіше вмикає сором, ніж мотивацію,
+     а сором — поганий двигун. Тому рахуємо зроблені дні за тиждень (пропуски нічого не забирають)
+     і після одного пропуску лише м'яко нагадуємо: головне — не пропустити вдруге. */
+  function isHabit(t) { return !t.parentId && (t.repeat === 'daily' || t.repeat === 'weekdays'); }
+  function habitDays(t) {
+    var days = {};
+    tasks().forEach(function (x) {
+      if (!x.done || !x.doneAt || x === t) return;
+      // старі копії (до посилання habit) впізнаємо за назвою й списком
+      if (x.habit === t.id || (!x.habit && x.repeat === 'none' && !x.parentId && x.listId === t.listId && x.title === t.title)) days[x.doneAt] = true;
+    });
+    return days;
+  }
+  function habitNeeded(t, d) { return t.repeat === 'daily' || parseDay(d).getDay() % 6 !== 0; }
+  /** { done, need } за останні 7 днів, включно з сьогодні; missed — учора пропущено, а сьогодні ще ні. */
+  function habitWeek(t) {
+    var days = habitDays(t), t0 = today(), done = 0, need = 0;
+    for (var i = 0; i < 7; i++) {
+      var d = addDays(t0, -i);
+      if (!habitNeeded(t, d)) continue;
+      need++;
+      if (days[d]) done++;
+    }
+    var y = addDays(t0, -1);
+    var any = Object.keys(days).length > 0;
+    return { done: done, need: need, missed: any && habitNeeded(t, y) && !days[y] && !days[t0] };
   }
 
   /** 5 хв, 1 год, 1,5 год, 2 год 15 хв. */
@@ -805,7 +836,7 @@
   function toggleDone(t) {
     if (!t.done && t.repeat !== 'none') {
       var prevDue = t.due;
-      var copy = mkTask(Object.assign({}, t, { id: uid(), repeat: 'none', done: true, doneAt: today() }));
+      var copy = mkTask(Object.assign({}, t, { id: uid(), repeat: 'none', done: true, doneAt: today(), habit: t.id, after: '', rank: 0 }));
       db.tasks[copy.id] = copy;
       t.due = nextDue(t.due, t.repeat);
       commit();
@@ -1202,6 +1233,13 @@
       out.push(h('span', { class: 'chip' }, svg(I.repeat, 14), REPEATS[t.repeat]));
     }
     if (t.est && !t.done) out.push(h('span', { class: 'chip', title: 'Скільки часу займе' }, svg(I.hourglass, 14), estLabel(t.est)));
+    if (isHabit(t) && !t.done) {
+      var hw = habitWeek(t);
+      out.push(h('span', { class: 'chip habit', title: 'Цього тижня зроблено ' + hw.done + ' з ' + hw.need + ' днів. Пропуск нічого не обнуляє: рахується кожен зроблений день.' },
+        svg(I.repeat, 14), hw.done + '/' + hw.need));
+      if (hw.missed) out.push(h('span', { class: 'chip twice', title: 'Один пропуск — нормально. Головне — не пропустити двічі поспіль.' }, 'не пропустити вдруге'));
+      if (t.after) out.push(h('span', { class: 'chip anchor', title: 'Якір: після чого робите' }, '↪ ' + t.after));
+    }
     if (t.images.length) out.push(h('span', { class: 'chip photos', title: 'Фото' }, svg(I.image, 14), String(t.images.length)));
     var subs = childrenOf(t.id);
     if (subs.length && !t.parentId && !t.done && showList) {
@@ -2051,6 +2089,10 @@
     var notes = h('textarea', { id: 'd-notes', placeholder: 'Деталі, посилання, кроки' });
     notes.value = t.notes;
     notes.addEventListener('input', function () { typed('notes', notes.value); });
+    // звичку легше вбудувати в те, що вже робите щодня: «після кави — вітаміни»
+    var afterIn = h('input', { id: 'd-after', placeholder: 'Напр.: після ранкової кави', autocomplete: 'off', maxlength: '80' });
+    afterIn.value = t.after;
+    afterIn.addEventListener('input', function () { typed('after', afterIn.value); });
     var due = window.SpravyDate.field('d-due', t.due || '', function (v) { setDue(t, v); commit(); });
     var rep = h('select', { id: 'd-rep', onchange: function (e) { t.repeat = e.target.value; if (t.repeat !== 'none' && !t.due) t.due = today(); commit(); } },
       Object.keys(REPEATS).map(function (k) { return h('option', { value: k, selected: t.repeat === k }, REPEATS[k]); }));
@@ -2093,6 +2135,7 @@
         h('div', { class: 'row2' },
           h('div', { class: 'field' }, h('label', { for: 'd-due' }, 'Дата'), due),
           h('div', { class: 'field' }, h('label', { for: 'd-rep' }, 'Повтор'), rep)),
+        isHabit(t) ? h('div', { class: 'field' }, h('label', { for: 'd-after' }, 'Після чого? (якір звички)'), afterIn) : null,
         parent ? null : h('div', { class: 'row2' },
           h('div', { class: 'field' }, h('label', { for: 'd-start' }, 'Початок'), timeIn('d-start', t.start, function (v) { times(v, t.end); })),
           h('div', { class: 'field' }, h('label', { for: 'd-end' }, 'Кінець'), timeIn('d-end', t.end, function (v) { times(t.start, v); }))),
@@ -2532,9 +2575,10 @@
       })) : h('div', { class: 'empty' }, 'Відкритих справ немає. Можна просто жити.'),
       cands.length > shown.length ? h('button', { type: 'button', class: 'more', onclick: function () { plan.all = true; renderPlan(); } },
         'Показати всі ' + cands.length) : null,
-      load ? h('div', { class: 'load' + (load > 360 ? ' over' : '') }, load > 360
-        ? 'Разом ≈ ' + estLabel(load) + '. Це більше, ніж реально вміщає день. Залиште одну-дві: решта не зникне.'
-        : 'Разом ≈ ' + estLabel(load) + '. Закладайте в півтора раза більше: оцінки майже завжди оптимістичні.') : null,
+      // при СДУГ час «на око» майже завжди вдвічі коротший за справжній: рахуємо з запасом ×2
+      load ? h('div', { class: 'load' + (load * 2 > 360 ? ' over' : '') }, 'За оцінкою ' + estLabel(load) + ', з запасом ×2 — ' + estLabel(load * 2) + '. ' + (load * 2 > 360
+        ? 'Це більше, ніж реально вміщає день. Залиште одну-дві: решта не зникне.'
+        : 'Плануйте саме стільки: оцінки майже завжди оптимістичні.')) : null,
       h('div', { class: 'modal-foot' },
         h('span', { class: 'pick-count' }, n + ' з ' + FOCUS_MAX),
         h('button', { type: 'button', class: 'btn primary', onclick: applyFocus }, n ? 'Готово' : tomorrow ? 'Готово, без головного' : 'Сьогодні без головного')));
@@ -2696,6 +2740,27 @@
         body));
   }
 
+  /** Дихання 4-7-8 (три кола): швидко збиває «забагато всього», перш ніж обирати справу. */
+  function breath() {
+    var box = h('div', { class: 'breath' });
+    var PH = [['Вдих носом', 4], ['Затримайте дихання', 7], ['Повільний видих ротом', 8]];
+    function start() {
+      var round = 0, ph = 0;
+      (function step() {
+        if (!box.isConnected) return;   // вікно закрили — зупиняємось
+        if (ph === PH.length) { ph = 0; round++; }
+        if (round === 3) { box.replaceChildren(h('span', {}, 'Готово. Тепер — одна справа на 5 хвилин.')); return; }
+        var p = PH[ph];
+        box.replaceChildren(h('b', {}, p[0]), h('span', {}, ' · ' + p[1] + ' с · коло ' + (round + 1) + ' з 3'),
+          h('i', { class: 'breath-bar', style: 'animation-duration:' + p[1] + 's' }));
+        ph++;
+        setTimeout(step, p[1] * 1000);
+      })();
+    }
+    box.append(h('button', { type: 'button', class: 'btn', onclick: start }, 'Спершу дихання 4-7-8 (хвилина)'));
+    return box;
+  }
+
   function helpAction(t, b) {
     if (b.act === 'icnu') {
       return h('div', { class: 'help-act' },
@@ -2705,6 +2770,7 @@
     }
     if (b.act === 'now') {
       return h('div', { class: 'help-act' },
+        breath(),
         h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(t, 5); } }, svg(I.play, 16), ' Почати цю на 5 хвилин'),
         h('button', { type: 'button', class: 'link-btn', onclick: goNow }, 'Відкрити «Зараз»: по одній справі'));
     }
