@@ -420,7 +420,8 @@
       var la = later.indexOf(a.id), lb = later.indexOf(b.id);
       return (la >= 0) - (lb >= 0) || la - lb ||
         (low ? quick[b.id] - quick[a.id] : 0) ||
-        rank(a) - rank(b) || (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order;
+        rank(a) - rank(b) || (a.rank || 1e9) - (b.rank || 1e9) ||   // ручний порядок, як у «Сьогодні»
+        (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order;
     });
   }
 
@@ -1591,11 +1592,11 @@
     var t0 = today();
     var open = tasks().filter(function (t) { return !t.done && !t.parentId; });
     var focus = focusToday();
-    var focusOpen = sorted(focus.filter(function (t) { return !t.done; }), 'mine');
+    var focusOpen = byRank(sorted(focus.filter(function (t) { return !t.done; }), 'mine'));
     var focusDone = focus.length - focusOpen.length;
     var rest = open.filter(function (t) { return t.due && t.due <= t0 && !isFocus(t); });
-    var late = sorted(rest.filter(function (t) { return t.due < t0; }), 'date');
-    var now = sorted(rest.filter(function (t) { return t.due === t0; }), 'mine');
+    var late = byRank(sorted(rest.filter(function (t) { return t.due < t0; }), 'date'));
+    var now = byRank(sorted(rest.filter(function (t) { return t.due === t0; }), 'mine'));
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
     // зроблене сьогодні — на видноті: «я нічого не встиг» рідко правда
     var done = sorted(tasks().filter(function (t) { return t.done && !t.parentId && t.doneAt === t0; }), 'mine');
@@ -1605,9 +1606,10 @@
       planInvite(false),
       focus.length ? [
         h('div', { class: 'group-row' },
-          h('div', { class: 'group-label' }, 'Головне · ' + focusDone + ' з ' + focus.length),
+          // «0 з 3» великими літерами читається як «0 3 3»: кирилична З схожа на трійку
+          h('div', { class: 'group-label' }, 'Головне · ' + focusDone + '/' + focus.length),
           h('button', { type: 'button', class: 'link-btn', onclick: function () { openPlan('focus'); } }, 'Змінити')),
-        focusOpen.length ? focusOpen.map(function (t) { return taskRow(t, { showList: true }); })
+        focusOpen.length ? h('div', { class: 'rank-group focus-group' }, rankRows(focusOpen))
           : h('div', { class: 'empty win' }, 'Головне на сьогодні зроблено. Усе інше буде бонусом.')
       ] : null,
       first && !mobileMq.matches ? addBlock(first.id, { due: t0 }) : null,
@@ -1615,10 +1617,10 @@
         h('div', { class: 'group-row' },
           h('div', { class: 'group-label' }, 'З минулих днів'),
           h('button', { type: 'button', class: 'link-btn', onclick: function () { openPlan('triage'); } }, 'Розібрати')),
-        late.map(function (t) { return taskRow(t, { showList: true }); })
+        h('div', { class: 'rank-group late-group' }, rankRows(late))
       ] : null,
       now.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label' }, 'На сьогодні')),
-        now.map(function (t) { return taskRow(t, { showList: true }); })] : null,
+        h('div', { class: 'rank-group now-group' }, rankRows(now))] : null,
       !focus.length && !late.length && !now.length ? h('div', { class: 'empty' }, 'На сьогодні нічого не заплановано.') : null,
       done.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
         done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })] : null));
@@ -1699,13 +1701,27 @@
      терміново. Щоб перекласти справу, досить зірочки чи дати. */
   var QUAD_SHOWN = 6;
 
-  /** Порядок у квадранті: спершу переставлені вручну (rank), далі решта — як раніше (за датою; «Решта» — за списком). */
-  function quadSorted(list, q) {
-    var base = q === 4 ? sorted(list, 'mine') : sorted(list, 'date');
+  /* Групи, що збирають справи з різних списків (квадранти матриці, «Сьогодні»), мають власний
+     ручний порядок rank: порядок у самих списках при цьому не змінюється. */
+
+  /** Спершу переставлені вручну (за rank), далі решта в порядку base — як було до перестановок. */
+  function byRank(base) {
     return base.filter(function (t) { return t.rank; }).sort(function (a, b) { return a.rank - b.rank; })
       .concat(base.filter(function (t) { return !t.rank; }));
   }
-  /** Поставити id перед/після ref у квадранті arr і пронумерувати всіх 1..n. Порядок у списках не змінюється. */
+  function quadSorted(list, q) { return byRank(q === 4 ? sorted(list, 'mine') : sorted(list, 'date')); }
+
+  /** Рядки групи, які можна переставляти між собою: мишкою на комп'ютері, довгим натисканням на телефоні. */
+  function rankRows(arr, shown, extra) {
+    var phone = mobileMq.matches;
+    function move(id, ref, after) { rankIn(arr, id, ref, after); }
+    function accepts(id) { return arr.some(function (x) { return x.id === id; }); }   // лише в межах своєї групи
+    return (shown || arr).map(function (t) {
+      return taskRow(t, Object.assign({ showList: true, drag: !phone, lift: phone, move: move, accepts: accepts }, extra));
+    });
+  }
+
+  /** Поставити id перед/після ref у групі arr і пронумерувати всіх 1..n. Порядок у списках не змінюється. */
   function rankIn(arr, id, ref, after) {
     var t = db.tasks[id];
     if (!t || id === ref) return;
@@ -1727,11 +1743,8 @@
       4: 'Порожньо.'
     };
     ui.qOpen = ui.qOpen || {};
-    var phone = mobileMq.matches;
     function quad(q) {
       var arr = quadSorted(by[q], q);
-      function move(id, ref, after) { rankIn(arr, id, ref, after); }
-      function accepts(id) { return arr.some(function (x) { return x.id === id; }); }   // лише в межах свого квадранта
       var open = !!ui.qOpen[q];
       var shown = open ? arr : arr.slice(0, QUAD_SHOWN);
       return h('section', { class: 'quad q' + q, 'aria-label': QUADS[q].name },
@@ -1740,7 +1753,7 @@
           h('span', { class: 'quad-name' }, QUADS[q].name),
           arr.length ? h('span', { class: 'pill' }, arr.length) : null),
         h('div', { class: 'quad-hint' }, QUADS[q].hint),
-        arr.length ? shown.map(function (t) { return taskRow(t, { showList: true, drag: !phone, lift: phone, move: move, accepts: accepts }); }) : h('div', { class: 'empty' }, EMPTY[q]),
+        arr.length ? h('div', { class: 'rank-group' }, rankRows(arr, shown)) : h('div', { class: 'empty' }, EMPTY[q]),
         arr.length > QUAD_SHOWN ? h('button', { type: 'button', class: 'more', onclick: function () { ui.qOpen[q] = !open; saveUi(); render(); } },
           open ? 'Згорнути' : 'Показати всі ' + arr.length) : null);
     }
