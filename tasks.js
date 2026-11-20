@@ -199,6 +199,7 @@
     play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
     spell: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13.5 15.5l2.5 2.5 4.5-5"/>',
+    moon: '<path d="M19.5 14.5A8 8 0 019.5 4.5a8 8 0 1010 10z"/>',
     image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5L5 19.5"/>',
     cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/>',
@@ -244,7 +245,8 @@
       color: /^#[0-9a-f]{6}$/i.test(o.color || '') ? o.color : '',   // колір події; порожньо — колір списку
       est: Math.min(600, Math.max(0, Math.round(Number(o.est) || 0))),   // скільки хвилин займе, 0 — не оцінено
       images: mkImages(o.images),                        // фото: файли у сховищі, тут лише шлях і розмір
-      rank: Math.max(0, Math.round(Number(o.rank) || 0))  // місце в квадранті матриці; 0 — не переставляли
+      rank: Math.max(0, Math.round(Number(o.rank) || 0)), // місце в квадранті матриці; 0 — не переставляли
+      seen: isDay(o.seen) ? o.seen : ''                    // коли справу востаннє чіпали; давно — вона йде в «Колись»
     };
   }
 
@@ -293,6 +295,8 @@
     }
     outbox = readJSON(OUT_KEY, {}) || {};
     since = lsGet(SINCE_KEY) || null;
+    // одноразово: перечитати все з сервера, щоб старі справи дізнались, коли їх востаннє чіпали
+    if (lsGet('spravy.seenV') !== '1') { since = null; lsSet('spravy.seenV', '1'); }
     snap = {};
     eachRec(function (kind, rec) { snap[kind + '/' + rec.id] = JSON.stringify(rec); });
     Object.assign(ui, readJSON(UI_KEY, {}));
@@ -315,7 +319,11 @@
       var key = kind + '/' + rec.id;
       var j = JSON.stringify(rec);
       seen[key] = 1;
-      if (snap[key] !== j) { snap[key] = j; outbox[key] = ++seq; }
+      if (snap[key] !== j) {
+        // справу щойно чіпали: це й рахуємо «останнім доторком» (для «Колись»)
+        if (kind === K_TASK && rec.seen !== today()) { rec.seen = today(); j = JSON.stringify(rec); }
+        snap[key] = j; outbox[key] = ++seq;
+      }
     });
     Object.keys(snap).forEach(function (key) {
       if (!seen[key]) { delete snap[key]; outbox[key] = 'del'; }
@@ -344,7 +352,14 @@
   /** Справа з датою в майбутньому: не показуємо її, доки не настане її день. */
   function isFuture(t) { return !!t.due && t.due > today(); }
   /** Відкрита справа верхнього рівня, яку видно вже сьогодні. */
-  function isOpenNow(t) { return !t.done && !t.parentId && !isFuture(t); }
+  function isOpenNow(t) { return !t.done && !t.parentId && !isFuture(t) && !isSomeday(t); }
+  /** «Колись»: справа без дати, зірочки, повтору й «головного», яку не чіпали SOMEDAY_DAYS днів.
+      Вона не зникає, а тихо йде з очей: 81 відкрита справа — це шум, що з'їдає увагу. */
+  var SOMEDAY_DAYS = 21;
+  function isSomeday(t) {
+    return !t.done && !t.parentId && !t.starred && !t.due && t.repeat === 'none' && !isFocus(t) &&
+      !!t.seen && t.seen < addDays(today(), -SOMEDAY_DAYS);
+  }
 
   /* ---------- матриця, головне на день, «застрягло» ---------- */
 
@@ -415,7 +430,7 @@
       return nowAll ? (t.starred ? 3 : 4) : -1;
     }
     var quick = {};
-    var q = tasks().filter(function (t) { return !t.done && !t.parentId && rank(t) >= 0; });
+    var q = tasks().filter(function (t) { return !t.done && !t.parentId && !isSomeday(t) && rank(t) >= 0; });
     if (low) q.forEach(function (t) { quick[t.id] = isQuick(t) ? 1 : 0; });
     return q.sort(function (a, b) {
       var la = later.indexOf(a.id), lb = later.indexOf(b.id);
@@ -697,6 +712,7 @@
     }
     if (!row.data || typeof row.data !== 'object') return false;
     var rec = row.kind === K_TASK ? mkTask(Object.assign({}, row.data, { id: row.id })) : mkList(Object.assign({}, row.data, { id: row.id }));
+    if (row.kind === K_TASK && !rec.seen && /^\d{4}-\d{2}-\d{2}/.test(row.updated_at || '')) rec.seen = row.updated_at.slice(0, 10);
     var j = JSON.stringify(rec);
     if (snap[key] === j && bag[row.id]) return false;
     bag[row.id] = rec;
@@ -1440,6 +1456,9 @@
     var later = sorted(tasks().filter(function (t) { return t.listId === l.id && !t.parentId && !t.done && isFuture(t); }), 'date');
     ui.openFuture = ui.openFuture || {};
     var futureOpen = !!ui.openFuture[l.id];
+    var someday = sorted(tasks().filter(function (t) { return t.listId === l.id && isSomeday(t); }), 'mine');
+    ui.openSomeday = ui.openSomeday || {};
+    var somedayOpen = !!ui.openSomeday[l.id];
     var done = tasks().filter(function (t) {
       if (t.listId !== l.id || !t.done) return false;
       var p = t.parentId && db.tasks[t.parentId];
@@ -1474,6 +1493,10 @@
         later.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(futureOpen),
           onclick: function () { ui.openFuture[l.id] = !futureOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Заплановано (' + later.length + ')') : null,
         futureOpen ? later.map(function (t) { return taskRow(t, { touch: false }); }) : null,
+        someday.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(somedayOpen),
+          title: 'Справи без дати, яких не чіпали ' + SOMEDAY_DAYS + ' днів. Відкрийте й натисніть «Повернути», щоб знову бачити в списку.',
+          onclick: function () { ui.openSomeday[l.id] = !somedayOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Колись (' + someday.length + ')') : null,
+        somedayOpen ? someday.map(function (t) { return taskRow(t, { touch: false }); }) : null,
         done.length ? h('button', { type: 'button', class: 'done-toggle', 'aria-expanded': String(isOpen),
           onclick: function () { ui.openDone[l.id] = !isOpen; saveUi(); render(); } }, svg(I.chev, 18), 'Виконані (' + done.length + ')') : null,
         isOpen ? done.slice(0, limit).map(function (t) { return taskRow(t); }) : null,
@@ -1632,7 +1655,7 @@
 
     b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
       h('h2', {}, 'Сьогодні'),
-      planInvite(false),
+      eveningInvite() || planInvite(false),
       focus.length ? [
         h('div', { class: 'group-row' },
           // «0 з 3» великими літерами читається як «0 3 3»: кирилична З схожа на трійку
@@ -1652,7 +1675,8 @@
         h('div', { class: 'rank-group now-group' }, rankRows(now))] : null,
       !focus.length && !late.length && !now.length ? h('div', { class: 'empty' }, 'На сьогодні нічого не заплановано.') : null,
       done.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
-        done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })] : null));
+        done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })] : null,
+      h('button', { type: 'button', class: 'quiet-link close-day', onclick: openEvening }, svg(I.moon || I.target, 16), 'Закрити день')));
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
@@ -1739,7 +1763,7 @@
     }
     b.replaceChildren(installBar() || '', h('section', { class: 'flat now' },
       h('div', { class: 'now-head' }, h('h2', {}, 'Зараз'), energy),
-      planInvite(true),
+      eveningInvite() || planInvite(true),
       body));
   }
 
@@ -2045,6 +2069,9 @@
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: close }, svg(I.close, 20))),
         title,
         isShouting(t.title) ? h('button', { type: 'button', class: 'decaps', onclick: function () { set('title', calm(t.title)); } }, 'Аа  Прибрати капс') : null,
+        isSomeday(t) ? h('div', { class: 'someday-note' },
+          h('span', {}, 'Лежить у «Колись»: її не чіпали понад ' + SOMEDAY_DAYS + ' днів.'),
+          h('button', { type: 'button', class: 'btn', onclick: function () { t.seen = today(); commit(); } }, 'Повернути в список')) : null,
         t.title ? translateBox(t) : null,
         t.title ? fixBox(t) : null,
         // матриця й головне на день — двома перемикачами, без окремих полів
@@ -2308,14 +2335,14 @@
         незроблені головні, потім важливе з матриці.
      Будь-який крок можна пропустити. */
 
-  var plan = null;   // { step: 'triage' | 'focus', queue: [id], i, picked: {id: true}, all }
+  var plan = null;   // { step: 'triage' | 'focus' | 'left', queue: [id], i, picked: {id: true}, all, day, evening }
 
   function openPlan(step) {
     var queue = sorted(tasks().filter(function (t) { return !t.done && !t.parentId && daysLate(t); }), 'date')
       .map(function (t) { return t.id; });
     var picked = {};
     focusToday().forEach(function (t) { if (!t.done) picked[t.id] = true; });
-    plan = { step: step === 'focus' || !queue.length ? 'focus' : 'triage', queue: queue, i: 0, picked: picked, all: false };
+    plan = { step: step === 'focus' || !queue.length ? 'focus' : 'triage', queue: queue, i: 0, picked: picked, all: false, day: today(), evening: false };
     closeNav();
     pushOverlay('plan');
     renderPlan();
@@ -2332,6 +2359,7 @@
   function renderPlan() {
     var box = $('plan');
     if (!plan) { box.replaceChildren(); return; }
+    if (plan.evening) { renderEvening(box); return; }
     var body = plan.step === 'triage' ? triageStep() : focusStep();
     // що з простроченого ще не розібрано: туди можна повернутися з другого кроку
     var left = plan.queue.filter(function (id) { var x = db.tasks[id]; return x && !x.done && daysLate(x); }).length;
@@ -2402,14 +2430,17 @@
   }
 
   function focusStep() {
-    var t0 = today(), y = addDays(t0, -1);
+    var day = plan.day, t0 = today(), y = addDays(day, -1), tomorrow = day > t0;
     function score(t) {
       if (plan.picked[t.id]) return 0;
       if (t.focus === y) return 1;                 // учора було головним, не встигли
       var q = quadrant(t);
       return q === 1 ? 2 : q === 2 ? 3 : q === 3 ? 4 : 5;
     }
-    var cands = tasks().filter(isOpenNow).sort(function (a, b) {
+    // на завтра — те, що буде видно завтра: без дати, на завтра чи раніше
+    var cands = tasks().filter(tomorrow ? function (t) {
+      return !t.done && !t.parentId && !isSomeday(t) && (!t.due || t.due <= day);
+    } : isOpenNow).sort(function (a, b) {
       return score(a) - score(b) || (a.due || '9999').localeCompare(b.due || '9999') || a.order - b.order;
     });
     var shown = plan.all ? cands : cands.slice(0, 7);
@@ -2419,8 +2450,9 @@
     // скільки часу займе обране — щоб день не планувати на 14 годин
     var load = Object.keys(plan.picked).reduce(function (s, id) { var x = db.tasks[id]; return s + (x ? x.est : 0); }, 0);
     return h('div', { class: 'pick' },
-      h('div', { class: 'modal-title' }, 'Головне на сьогодні'),
-      h('div', { class: 'modal-sub' }, 'Оберіть до трьох. Решту теж можна робити, але ці три зроблять день вдалим.'),
+      h('div', { class: 'modal-title' }, tomorrow ? 'Головне на завтра' : 'Головне на сьогодні'),
+      h('div', { class: 'modal-sub' }, tomorrow ? 'Оберіть до трьох зараз, поки день свіжий у голові. Уранці рішення вже буде прийняте.'
+        : 'Оберіть до трьох. Решту теж можна робити, але ці три зроблять день вдалим.'),
       insight ? h('div', { class: 'insight' }, insight) : null,
       cands.length ? h('div', { class: 'cands' }, shown.map(function (t) {
         var on = !!plan.picked[t.id];
@@ -2441,20 +2473,91 @@
         : 'Разом ≈ ' + estLabel(load) + '. Закладайте в півтора раза більше: оцінки майже завжди оптимістичні.') : null,
       h('div', { class: 'modal-foot' },
         h('span', { class: 'pick-count' }, n + ' з ' + FOCUS_MAX),
-        h('button', { type: 'button', class: 'btn primary', onclick: applyFocus }, n ? 'Готово' : 'Сьогодні без головного')));
+        h('button', { type: 'button', class: 'btn primary', onclick: applyFocus }, n ? 'Готово' : tomorrow ? 'Готово, без головного' : 'Сьогодні без головного')));
   }
 
   function applyFocus() {
-    var t0 = today(), n = 0;
+    var t0 = plan.day, n = 0, evening = plan.evening, first = null;
     tasks().forEach(function (t) {
       if (t.parentId || t.done) return;
-      if (plan.picked[t.id]) { t.focus = t0; n++; }
+      if (plan.picked[t.id]) { t.focus = t0; n++; first = first || t; }
       else if (t.focus === t0) t.focus = '';
     });
+    if (evening) {
+      ui.closedDay = today(); saveUi();
+      commit(); closePlan();
+      toast(n ? 'День закрито. Завтра почнете з «' + first.title + '».' : 'День закрито. Відпочивайте.');
+      return;
+    }
     if (!n) { ui.planSkip = t0; saveUi(); }
     commit();
     closePlan();
     toast(n ? 'План готовий: ' + n + ' ' + (n === 1 ? 'головна справа' : 'головні справи') + ' на сьогодні.' : 'Добре, сьогодні без головного.');
+  }
+
+  /* ---------- «Закрити день»: дві хвилини ввечері ----------
+     1) що лишилось на сьогодні — завтра, без дати чи вже зроблено (звички не питаємо: вони самі);
+     2) до трьох головних на завтра. Уранці не треба вирішувати, з чого почати. */
+  function leftToday() {
+    var t0 = today();
+    return sorted(tasks().filter(function (t) {
+      return !t.done && !t.parentId && t.repeat === 'none' && ((t.due && t.due <= t0) || isFocus(t));
+    }), 'date');
+  }
+  function openEvening() {
+    var t1 = addDays(today(), 1), picked = {};
+    tasks().forEach(function (t) { if (!t.done && t.focus === t1) picked[t.id] = true; });
+    plan = { evening: true, step: 'left', queue: [], i: 0, picked: picked, all: false, day: t1 };
+    closeNav();
+    pushOverlay('plan');
+    renderPlan();
+  }
+  /** Увечері (після 18:00), якщо день ще не закрито й є що закривати. */
+  function eveningInvite() {
+    if (!ready || new Date().getHours() < 18 || ui.closedDay === today()) return null;
+    var n = leftToday().length;
+    return h('div', { class: 'plan-card' },
+      h('span', { class: 'plan-ico' }, svg(I.moon || I.target, 20)),
+      h('div', { class: 'plan-text' }, h('b', {}, 'Закрити день'),
+        h('span', {}, (n ? 'Вирішити, що робити з ' + n + ' ' + plural(n) + ' на сьогодні, й о' : 'О') + 'брати головне на завтра. Дві хвилини.')),
+      h('button', { type: 'button', class: 'btn primary', onclick: openEvening }, 'Закрити'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Не сьогодні', title: 'Не сьогодні',
+        onclick: function () { ui.closedDay = today(); saveUi(); render(); } }, svg(I.close, 18)));
+  }
+  function renderEvening(box) {
+    var t1 = addDays(today(), 1);
+    var body;
+    if (plan.step === 'left') {
+      var left = leftToday();
+      body = h('div', { class: 'evening' },
+        h('div', { class: 'modal-title' }, 'Що лишилось на сьогодні'),
+        h('div', { class: 'modal-sub' }, left.length ? 'Без докорів: день був таким, яким був. Просто вирішіть, куди кожну.'
+          : 'Нічого не висить. Добрий день.'),
+        left.length ? h('div', { class: 'ev-list' }, left.map(function (t) {
+          function act(fn) { return function () { fn(); commit(); renderPlan(); }; }
+          return h('div', { class: 'ev-row' },
+            h('div', { class: 'ev-title' }, t.title || 'Без назви'),
+            h('div', { class: 'ev-acts' },
+              h('button', { type: 'button', class: 'btn', onclick: act(function () { setDue(t, t1); t.focus = ''; }) }, 'Завтра'),
+              h('button', { type: 'button', class: 'btn', onclick: act(function () { t.due = ''; t.focus = ''; }) }, 'Без дати'),
+              h('button', { type: 'button', class: 'btn', onclick: act(function () { toggleDone(t); }) }, 'Зроблено')));
+        })) : null,
+        h('div', { class: 'modal-foot' },
+          left.length > 1 ? h('button', { type: 'button', class: 'link-btn', onclick: function () {
+            left.forEach(function (t) { setDue(t, t1); t.focus = ''; }); commit(); renderPlan();
+          } }, 'Усе на завтра') : h('span'),
+          h('button', { type: 'button', class: 'btn primary', onclick: function () { plan.step = 'focus'; renderPlan(); } }, 'Далі')));
+    } else body = focusStep();
+    box.replaceChildren(
+      h('div', { class: 'modal-scrim', onclick: function () { closePlan(); } }),
+      h('div', { class: 'modal plan', role: 'dialog', 'aria-label': 'Закрити день' },
+        h('div', { class: 'modal-head' },
+          h('div', { class: 'steps' },
+            plan.step === 'left' ? h('span', { class: 'on' }, '1. Що лишилось')
+              : h('button', { type: 'button', onclick: function () { plan.step = 'left'; renderPlan(); } }, '1. Що лишилось'),
+            h('span', { class: plan.step === 'focus' ? 'on' : '' }, '2. Головне на завтра')),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: function () { closePlan(); } }, svg(I.close, 20))),
+        body));
   }
 
   /** Що найчастіше заважало за тиждень: свій «улюблений» патерн краще знати в обличчя. */
