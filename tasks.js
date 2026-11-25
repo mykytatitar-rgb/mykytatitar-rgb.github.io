@@ -209,6 +209,7 @@
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
     spell: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13.5 15.5l2.5 2.5 4.5-5"/>',
     flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+    map: '<path d="M9 4.5L3.5 6.5v13L9 17.5l6 2 5.5-2v-13L15 6.5z"/><path d="M9 4.5v13M15 6.5v13"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     moon: '<path d="M19.5 14.5A8 8 0 019.5 4.5a8 8 0 1010 10z"/>',
     image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5L5 19.5"/>',
@@ -1035,6 +1036,7 @@
     if (ui.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', ui.theme);
     $('app').classList.toggle('view-cal', ui.view === 'calendar');
     renderSide(); renderHead(); renderTop(); renderNav(); renderBoard(); renderDrawer();
+    if (world) paintWorld();
   }
 
   /** Список, відкритий на телефоні (вкладка), — або перший видимий. */
@@ -1079,13 +1081,14 @@
     else if (kind === 'kick') closeKick();
     else if (kind === 'calform') window.SpravyCal.closeForm();
     else if (kind === 'voice') closeVoice();
+    else if (kind === 'world') closeWorld();
   }
   /** Закрити всі вікна разом і прибрати їхні кроки з історії одним стрибком. */
   function closeOverlays() {
     var n = overlays.length;
     if (!n) return;
     overlays = [];
-    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true); closeVoice(true);
+    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true); closeVoice(true); closeWorld(true);
     if (drawerTask) closeDrawer(true);
     skipPops++;
     try { history.go(-n); } catch (e) { skipPops--; }
@@ -1108,6 +1111,7 @@
     else if (kind === 'kick') closeKick(true);
     else if (kind === 'calform') window.SpravyCal.closeForm(true);
     else if (kind === 'voice') closeVoice(true);
+    else if (kind === 'world') closeWorld(true);
   });
 
   /* ---------- шапка й нижня панель телефона ---------- */
@@ -1883,6 +1887,8 @@
     }).join('');
     var track = h('div', { class: 'rm-track' + (wide ? ' rm-wide' : '') });
     track.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" class="rm-path"/></svg>';
+    if (from > 0) track.append(h('button', { type: 'button', class: 'rm-more', title: 'Увесь шлях — на мапі', onclick: openWorld },
+      '← ще ' + from));
     shown.forEach(function (nd, k) {
       var icon = nd.state === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16, 3)
         : nd.state === 'locked' ? (nd.n ? String(nd.n) : svg('<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 016 0v3"/>', 14, 2))
@@ -1916,7 +1922,9 @@
     return h('section', { class: 'roadmap', 'aria-label': 'Ціль' },
       h('div', { class: 'rm-head' },
         h('span', { class: 'rm-kicker' }, svg(I.target, 14), 'Ціль'),
-        dl ? h('span', { class: 'rm-deadline' + (left !== null && left <= 2 ? ' soon' : '') }, svg(I.cal, 14), dl) : null),
+        h('span', { class: 'rm-head-r' },
+          dl ? h('span', { class: 'rm-deadline' + (left !== null && left <= 2 ? ' soon' : '') }, svg(I.cal, 14), dl) : null,
+          !isH && childrenOf(g.id).length ? h('button', { type: 'button', class: 'rm-world-btn', onclick: openWorld }, svg(I.map, 15), 'Мапа') : null)),
       h('button', { type: 'button', class: 'rm-title', onclick: function () { openDrawer(g.id); } }, g.title),
       h('div', { class: 'rm-info' }, info),
       track,
@@ -2139,6 +2147,179 @@
       h('div', { class: 'group-row' }, h('h2', {}, 'Ціль'),
         g ? h('button', { type: 'button', class: 'link-btn', onclick: function () { setGoal(g); } }, 'Зняти ціль') : null),
       h('div', { class: 'goal-grid' }, main, g ? goalSide(g, steps) : null)));
+  }
+
+  /* ---------- мапа цілі: увесь шлях як 3D-світ ----------
+     Земля — площина, нахилена CSS-перспективою; дорога від «Старту» (ближче до нас) до «Фінішу» вдалині.
+     Кроки — майданчики на дорозі, підписи, дерева й персонаж стоять вертикально («білборди»).
+     Пройдене — освітлене й золоте, попереду — туман: видно шлях, але не тисне весь обсяг одразу.
+     Без бібліотек: лише трансформації браузера, тож працює й офлайн, і на телефоні. */
+  var world = null;
+  var TILT = 56, W_GW = 1000, W_S = 170, W_TOP = 300, W_BOT = 320;
+
+  function openWorld() {
+    var g = goalTask();
+    if (!g || world) return;
+    var layer = h('div', { class: 'world', role: 'dialog', 'aria-label': 'Мапа цілі «' + g.title + '»' });
+    world = { layer: layer, cam: null, glide: false, pop: '', moved: false };
+    document.body.append(layer);
+    pushOverlay('world');
+    paintWorld();
+  }
+  function closeWorld(fromBack) {
+    if (!world) return;
+    world.layer.remove();
+    world = null;
+    if (!fromBack) popOverlay('world');
+  }
+  /** Детермінований «випадок»: світ щоразу той самий, дерева не скачуть. */
+  function wRnd(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+  function paintWorld() {
+    var g = goalTask();
+    if (!g || isHabit(g)) { closeWorld(); return; }
+    var steps = sorted(childrenOf(g.id), 'mine'), N = steps.length;
+    var nowI = steps.findIndex(function (s) { return !s.done; });        // -1 — усе пройдено
+    var doneN = steps.filter(function (s) { return s.done; }).length;
+    var GH = W_TOP + (N + 1) * W_S + W_BOT;
+    // точки: 0 — старт, 1..N — кроки, N+1 — фініш
+    var P = [];
+    for (var i = 0; i <= N + 1; i++) P.push([W_GW / 2 + 270 * Math.sin(i * 1.15), W_TOP + (N + 1 - i) * W_S]);
+    function road(upto) {
+      var d = 'M' + P[0][0] + ' ' + (P[0][1] + 140);
+      d += ' L' + P[0][0] + ' ' + P[0][1];
+      for (var k = 1; k <= upto; k++) {
+        var my = (P[k - 1][1] + P[k][1]) / 2;
+        d += ' C' + P[k - 1][0] + ' ' + my + ' ' + P[k][0] + ' ' + my + ' ' + P[k][0] + ' ' + P[k][1];
+      }
+      return d;
+    }
+    var walked = nowI < 0 ? N + 1 : nowI + 1;
+    var ground = h('div', { class: 'w-ground', style: 'width:' + W_GW + 'px;height:' + GH + 'px' });
+    ground.innerHTML = '<svg class="w-roads" width="' + W_GW + '" height="' + GH + '" aria-hidden="true">' +
+      '<path class="w-road-edge" d="' + road(N + 1) + '"/><path class="w-road" d="' + road(N + 1) + '"/>' +
+      '<path class="w-road-done" d="' + road(walked) + '"/><path class="w-road-mid" d="' + road(N + 1) + '"/></svg>';
+    var fogY = nowI < 0 ? 0 : P[Math.min(N + 1, nowI + 3)][1];
+    if (fogY > 0) ground.append(h('div', { class: 'w-fog', style: 'height:' + fogY + 'px' }));
+    // білборд: стоїть на точці землі вертикально
+    function bb(cls, x, y, kids, extra) {
+      var el = h('div', Object.assign({ class: 'w-bb ' + cls, style: 'left:' + x + 'px;top:' + y + 'px' }, extra || {}), kids);
+      ground.append(el);
+      return el;
+    }
+    // дерева, ялинки, камінці — подалі від дороги
+    var near = [];
+    for (var q = 0; q < P.length - 1; q++) for (var f = 0; f < 1; f += 0.2) near.push([P[q][0] + (P[q + 1][0] - P[q][0]) * f, P[q][1] + (P[q + 1][1] - P[q][1]) * f]);
+    var count = Math.round(GH / 34);
+    for (var t = 0; t < count; t++) {
+      var x = wRnd(t) * W_GW, y = 60 + wRnd(t + 999) * (GH - 80);
+      if (near.some(function (p) { return Math.abs(p[0] - x) < 95 && Math.abs(p[1] - y) < 95; })) continue;
+      var kind = wRnd(t + 77), sc = 0.7 + wRnd(t + 55) * 0.7;
+      var cls = kind < 0.45 ? 'w-tree round' : kind < 0.85 ? 'w-tree pine' : 'w-tree rock';
+      bb(cls + (y < fogY - 60 ? ' fogged' : ''), x, y, null, { style: 'left:' + x + 'px;top:' + y + 'px;--s:' + sc.toFixed(2) });
+    }
+    // старт
+    ground.append(h('div', { class: 'w-pad start', style: 'left:' + P[0][0] + 'px;top:' + P[0][1] + 'px' }));
+    bb('w-start w-sign', P[0][0] - 90, P[0][1] + 10, h('span', {}, 'Старт'));
+    // кроки
+    steps.forEach(function (st, k) {
+      var p = P[k + 1], state = st.done ? 'done' : k === nowI ? 'now' : 'locked';
+      var node = h('button', { type: 'button', class: 'w-node ' + state + (p[1] < fogY - 60 ? ' fogged' : ''),
+        style: 'left:' + p[0] + 'px;top:' + p[1] + 'px', 'aria-label': 'Крок ' + (k + 1) + ': ' + st.title,
+        onclick: function () { if (world.moved) return; world.pop = st.id; paintWorld(); } });
+      ground.append(node);
+      bb('w-pin ' + state, p[0], p[1], st.done ? svg(I.check, 22, 3) : h('b', {}, String(k + 1)));
+      var side = p[0] > W_GW / 2 ? -1 : 1;
+      bb('w-label ' + state + (side < 0 ? ' left' : ''), p[0] + side * 62, p[1] + 6, (k + 1) + ' · ' + st.title);
+      if ((k + 1) % 5 === 0 && k + 1 < N) bb('w-sign w-stage', p[0] - side * 120, p[1] - 30, h('span', {}, 'Етап ' + ((k + 1) / 5)));
+    });
+    // фініш
+    var fp = P[N + 1];
+    ground.append(h('div', { class: 'w-pad finish', style: 'left:' + fp[0] + 'px;top:' + fp[1] + 'px' }));
+    bb('w-finish', fp[0], fp[1], [svg(I.flag, 54, 2), h('span', {}, g.title)]);
+    // персонаж
+    var at = nowI < 0 ? fp : P[nowI + 1];
+    var me = bb('w-me', at[0], at[1]);
+    me.append(avatarEl(nowI < 0 ? 'cheer' : 'happy', 96));
+
+    // камера: на поточному кроці; при оновленні — лишається, де була
+    var focus = function (k) { return { x: P[k][0], y: P[k][1] + 40 }; };
+    var meI = nowI < 0 ? N + 1 : nowI + 1;
+    if (!world.cam) world.cam = Object.assign(focus(meI), { z: innerWidth < 700 ? 0.62 : 0.9 });
+    if (world.follow) { Object.assign(world.cam, focus(meI)); world.glide = true; world.follow = false; }
+    var tilt = h('div', { class: 'w-tilt' }, ground);
+    var stage = h('div', { class: 'w-stage' }, tilt);
+    function apply() {
+      var c = world.cam;
+      c.x = Math.max(0, Math.min(W_GW, c.x)); c.y = Math.max(W_TOP - 200, Math.min(GH - 60, c.y));
+      c.z = Math.max(0.4, Math.min(1.6, c.z));
+      tilt.classList.toggle('glide', world.glide);
+      tilt.style.transform = 'rotateX(' + TILT + 'deg) scale(' + c.z + ')';
+      ground.style.transform = 'translate(' + (-c.x) + 'px,' + (-c.y) + 'px)';
+      ground.classList.toggle('glide', world.glide);
+      world.glide = false;
+    }
+    function go(k) { Object.assign(world.cam, focus(k)); world.glide = true; apply(); }
+    // ходити: тягнути, колесо, стрілки
+    var drag = null;
+    stage.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('.w-pop,.w-bar,.w-ctrl')) return;
+      drag = { x: e.clientX, y: e.clientY, cx: world.cam.x, cy: world.cam.y, id: e.pointerId };
+      world.moved = false;
+    });
+    stage.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 6) { world.moved = true; try { stage.setPointerCapture(drag.id); } catch (er) {} }
+      if (!world.moved) return;
+      world.cam.x = drag.cx - dx / world.cam.z;
+      world.cam.y = drag.cy - dy / (world.cam.z * 0.56);
+      apply();
+    });
+    function end() { drag = null; setTimeout(function () { if (world) world.moved = false; }, 0); }
+    stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
+    stage.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      if (e.ctrlKey) world.cam.z *= e.deltaY > 0 ? 0.92 : 1.08;
+      else { world.cam.y += e.deltaY / world.cam.z; world.cam.x += e.deltaX / world.cam.z; }
+      apply();
+    }, { passive: false });
+    world.layer.onkeydown = function (e) {
+      var m = { ArrowUp: [0, -120], ArrowDown: [0, 120], ArrowLeft: [-120, 0], ArrowRight: [120, 0] }[e.key];
+      if (m) { e.preventDefault(); world.cam.x += m[0]; world.cam.y += m[1]; world.glide = true; apply(); }
+    };
+    // картка кроку
+    var popT = world.pop && db.tasks[world.pop], pop = null;
+    if (popT && popT.parentId === g.id) {
+      var pk = steps.indexOf(popT);
+      pop = h('div', { class: 'w-pop' },
+        h('button', { type: 'button', class: 'w-x', 'aria-label': 'Закрити', onclick: function () { world.pop = ''; paintWorld(); } }, svg(I.close, 16)),
+        h('small', {}, 'Крок ' + (pk + 1) + ' з ' + N + (popT.done ? ' · пройдено' + (popT.doneAt ? ' ' + dueLabel(popT.doneAt).toLowerCase() : '') : pk === nowI ? ' · ви тут' : '')),
+        h('div', { class: 'w-pop-title' }, popT.title),
+        h('div', { class: 'w-pop-act' },
+          popT.done ? null : h('button', { type: 'button', class: 'btn primary', onclick: function (e) {
+            burst(e.currentTarget); world.pop = ''; world.follow = true; toggleDone(popT);
+          } }, svg(I.check, 15, 2.5), 'Зроблено'),
+          h('button', { type: 'button', class: 'btn', onclick: function () {
+            var id = popT.id;
+            world.layer.remove(); world = null; swapOverlay('world', 'drawer');
+            drawerTask = id; render();
+          } }, 'Відкрити картку')));
+    }
+    world.layer.replaceChildren(stage,
+      h('div', { class: 'w-bar' },
+        h('div', { class: 'w-bar-t' }, h('small', {}, 'Мапа цілі · ' + doneN + '/' + N), h('b', {}, g.title)),
+        h('button', { type: 'button', class: 'w-close', 'aria-label': 'Закрити мапу', onclick: function () { closeWorld(); } }, svg(I.close, 20))),
+      h('div', { class: 'w-ctrl' },
+        h('button', { type: 'button', onclick: function () { go(0); } }, 'Старт'),
+        h('button', { type: 'button', class: 'me', onclick: function () { go(meI); } }, 'До мене'),
+        h('button', { type: 'button', onclick: function () { go(N + 1); } }, 'Фініш'),
+        h('button', { type: 'button', 'aria-label': 'Ближче', onclick: function () { world.cam.z *= 1.15; world.glide = true; apply(); } }, '+'),
+        h('button', { type: 'button', 'aria-label': 'Далі', onclick: function () { world.cam.z /= 1.15; world.glide = true; apply(); } }, '−')),
+      pop);
+    world.layer.tabIndex = -1;
+    apply();
+    if (!world.layer.contains(document.activeElement)) world.layer.focus({ preventScroll: true });
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
