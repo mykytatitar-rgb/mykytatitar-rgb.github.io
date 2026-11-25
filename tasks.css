@@ -559,7 +559,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
     transform: translateX(-105%); transition: transform .2s;
   }
   .app.nav-open .side { transform: none; }
-  .side .btn-create, .side #views { display: none; }   /* на телефоні це внизу: «+» і нижня панель */
+  .side .btn-create, .side #views .nav-item:not(.phone-keep) { display: none; }   /* на телефоні це внизу: «+» і нижня панель */
+  .side #views { margin-bottom: .6rem; }   /* лишається «Ціль»: на нижній панелі для неї немає місця */
 
   .head { display: none; }
   .topbar {
@@ -919,3 +920,7 @@ body {
 .attach-pick input[type=search] { background: var(--surface-2); border: 1px solid var(--line); border-radius: .75rem; padding: .55rem .75rem; }
 .attach-pick .cands { max-height: 50vh; overflow: auto; }
 .cand.on { border-color: var(--accent); background: var(--accent-soft); }
+.goal-view .roadmap { margin-left: 0; margin-right: 0; }
+.goal-view .rm-track { height: 9rem; }
+.goal-steps { display: flex; flex-direction: column; margin-top: .3rem; }
+.goal-steps .group-label { margin: .9rem 0 .3rem; }

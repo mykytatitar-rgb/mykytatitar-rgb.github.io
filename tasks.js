@@ -1185,10 +1185,11 @@
       ['today', 'Сьогодні', I.sun, open.filter(function (t) { return t.due && t.due <= t0; }).length],
       ['matrix', 'Матриця', I.grid, open.filter(function (t) { return quadrant(t) === 1; }).length],
       ['calendar', 'Календар', I.cal, 0],
-      ['starred', 'Важливі', I.star, open.filter(function (t) { return t.starred; }).length]
+      ['starred', 'Важливі', I.star, open.filter(function (t) { return t.starred; }).length],
+      ['goal', 'Ціль', I.flag, goalBadge()]
     ];
     $('views').replaceChildren.apply($('views'), views.map(function (v) {
-      return h('button', { type: 'button', class: 'nav-item', 'aria-current': String(ui.view === v[0]),
+      return h('button', { type: 'button', class: 'nav-item' + (v[0] === 'goal' ? ' phone-keep' : ''), 'aria-current': String(ui.view === v[0]),
         onclick: function () { ui.view = v[0]; saveUi(); closeNav(); render(); } },
         svg(v[2], 20), v[1], h('span', { class: 'count' }, v[3] || ''));
     }));
@@ -1690,6 +1691,7 @@
     if (ui.view === 'now') { renderNow(b); return; }
     if (ui.view === 'matrix') { renderMatrix(b); return; }
     if (ui.view === 'today') { renderToday(b); return; }
+    if (ui.view === 'goal') { renderGoal(b); return; }
     var open = tasks().filter(isOpenNow);
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
     var starred = sorted(open.filter(function (t) { return t.starred; }), 'date');
@@ -1776,7 +1778,7 @@
     tasks().forEach(function (x) { if (x.goal) x.goal = false; });
     t.goal = on;
     commit();
-    if (on) toast('Ціль: «' + t.title + '». Її дорожня карта — у «Зараз» і «Сьогодні».');
+    if (on) toast('Ціль: «' + t.title + '». Її дорожня карта — у розділі «Ціль», а також у «Зараз» і «Сьогодні».');
   }
 
   function hero(kind) {
@@ -1998,6 +2000,31 @@
     return h('div', { class: 'rm-add-wrap' },
       h('div', { class: 'rm-add first-step-row' }, input, h('button', { type: 'button', class: 'btn', onclick: add }, svg(I.addTask, 16), 'Крок')),
       h('button', { type: 'button', class: 'link-btn', onclick: function () { openAttach(g); } }, 'Додати наявні справи, зокрема виконані'));
+  }
+
+  /** Підпис біля «Ціль» у меню: «1/3» кроків (або тижнева норма звички). */
+  function goalBadge() {
+    var g = goalTask();
+    if (!g) return '';
+    if (isHabit(g)) { var hw = habitWeek(g); return hw.done + '/' + hw.need; }
+    var st = childrenOf(g.id);
+    return st.length ? st.filter(function (x) { return x.done; }).length + '/' + st.length : '';
+  }
+
+  /** Розділ «Ціль»: велика дорожня карта, усі кроки (і пройдені), зняти ціль. */
+  function renderGoal(b) {
+    var g = goalTask();
+    var steps = g && !isHabit(g) ? sorted(childrenOf(g.id), 'mine') : [];
+    var openS = steps.filter(function (x) { return !x.done; }), doneS = steps.filter(function (x) { return x.done; });
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat goal-view' },
+      h('div', { class: 'group-row' }, h('h2', {}, 'Ціль'),
+        g ? h('button', { type: 'button', class: 'link-btn', onclick: function () { setGoal(g); } }, 'Зняти ціль') : null),
+      roadmap(),
+      g && !isHabit(g) ? h('div', { class: 'goal-steps' },
+        h('div', { class: 'group-label' }, 'Кроки · ' + doneS.length + '/' + steps.length),
+        openS.length ? openS.map(function (x) { return taskRow(x, { drag: !mobileMq.matches && !hoverMq.matches, lift: mobileMq.matches }); })
+          : h('div', { class: 'empty' }, steps.length ? 'Усі кроки пройдено. Ціль досягнуто? Відмітьте її в картці.' : 'Кроків ще немає: додайте їх у картці вище.'),
+        doneS.length ? [h('div', { class: 'group-label win' }, 'Пройдено · ' + doneS.length), doneS.map(function (x) { return taskRow(x); })] : null) : null));
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
