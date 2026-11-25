@@ -1090,8 +1090,11 @@ button.w-node { pointer-events: auto; }
 .world .wr-bank { fill: none; stroke: var(--bank); stroke-width: 124; stroke-linejoin: round; }
 .world .wr-water { fill: none; stroke: var(--water1); stroke-width: 98; stroke-linejoin: round; }
 .world .wr-deep { fill: none; stroke: var(--water2); stroke-width: 38; opacity: .45; }
-.world .wr-shine { fill: none; stroke: rgba(255, 255, 255, .75); stroke-width: 3; stroke-dasharray: 10 48; animation: w-flow 3.2s linear infinite; }
-@keyframes w-flow { to { stroke-dashoffset: -58; } }
+.world .wr-shine { fill: none; stroke: rgba(255, 255, 255, .8); stroke-width: 3; stroke-dasharray: 10 48; stroke-linecap: round; }
+/* відблиски ріки: два пласкі шари над землею по черзі проступають — мерехтіння прозорістю веде компоновщик */
+.w-water { position: absolute; left: 0; pointer-events: none; overflow: hidden; animation: w-glint 3.2s ease-in-out infinite; }
+.w-water1 { animation-delay: -1.6s; }
+@keyframes w-glint { 0%, 100% { opacity: .15; } 50% { opacity: 1; } }
 .world .lk-bank { fill: var(--bank); }
 .world .lk-water { fill: var(--water1); }
 .world .lk-deep { fill: var(--water2); opacity: .45; }
@@ -1169,18 +1172,18 @@ button.w-node.now::after { content: ''; position: absolute; inset: -20px; border
 .world .hw { fill: var(--wall); } .world .hw2 { fill: var(--wall2); } .world .hr { fill: var(--roof); } .world .hr2 { fill: var(--roof2); }
 .world .hc { fill: var(--wood2); } .world .hd { fill: var(--wood); } .world .hk { fill: #ffd27a; }
 .world .hwin { fill: var(--win); } .world .hwf { stroke: var(--wood2); stroke-width: 2.5; }
-.world .smoke circle { fill: rgba(255, 255, 255, .75); transform-box: fill-box; transform-origin: center; animation: w-smoke 4.5s ease-out infinite; }
+.world .smoke circle { fill: rgba(255, 255, 255, .75); transform-box: fill-box; transform-origin: center; animation: w-smoke 4.5s steps(9) infinite; }
 .world .smoke circle:nth-child(2) { animation-delay: -1.5s; }
 .world .smoke circle:nth-child(3) { animation-delay: -3s; }
 @keyframes w-smoke { 0% { opacity: 0; transform: translateY(16px) scale(.6); } 30% { opacity: .9; } 100% { opacity: 0; transform: translateY(-26px) scale(1.5); } }
 .world .lg { fill: var(--wood); } .world .lg2 { fill: var(--wood2); }
-.world .f1 { fill: #ff7a2f; transform-box: fill-box; transform-origin: 50% 100%; animation: w-flick .45s ease-in-out infinite alternate; }
-.world .f2 { fill: #ffd84d; transform-box: fill-box; transform-origin: 50% 100%; animation: w-flick .35s ease-in-out infinite alternate-reverse; }
+.world .f1 { fill: #ff7a2f; transform-box: fill-box; transform-origin: 50% 100%; animation: w-flick .6s steps(3) infinite alternate; }
+.world .f2 { fill: #ffd84d; transform-box: fill-box; transform-origin: 50% 100%; animation: w-flick .5s steps(3) infinite alternate-reverse; }
 @keyframes w-flick { to { transform: scaleY(.84) skewX(4deg); } }
 .world .cs1 { fill: var(--stone2); } .world .cs2 { fill: var(--stone1); } .world .csh { fill: rgba(0, 0, 0, .12); }
 .world .cr { fill: var(--croof); } .world .cr2 { fill: var(--croof2); }
 .world .fp { stroke: #6f4a26; stroke-width: 3; }
-.world .fg { fill: var(--flag); transform-box: fill-box; transform-origin: 0 50%; animation: w-flag 1.3s ease-in-out infinite alternate; }
+.world .fg { fill: var(--flag); transform-box: fill-box; transform-origin: 0 50%; animation: w-flag 1.4s steps(4) infinite alternate; }
 @keyframes w-flag { to { transform: scaleX(.82) skewY(7deg); } }
 .world .cg { fill: #3b2a20; } .world .cgl { stroke: #8a6a4a; stroke-width: 3; } .world .cw { fill: var(--win); }
 .world .gp { fill: #b8452e; } .world .gb { fill: #d4573b; } .world .gb2 { fill: #a63c28; }
@@ -1241,6 +1244,7 @@ button.w-node.now::after { content: ''; position: absolute; inset: -20px; border
   .w-mini { display: none; }
   .w-prog { width: 110px; }
 }
+.world.w-moving *, .world.w-moving *::after { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
-  button.w-node.now::after, .w-me, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .world .wr-shine, .w-stars, .w-fw i { animation: none; }
+  button.w-node.now::after, .w-me, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .w-water, .w-stars, .w-fw i { animation: none; }
 }

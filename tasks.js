@@ -2247,6 +2247,8 @@
     c.y = Math.max(0, Math.min(world.L.H + 120, c.y));
     c.z = Math.max(0.4, Math.min(1.6, c.z));
   }
+  /** Поки камера рухається, декоративні анімації стоять: менше роботи на кадр, і око не розривається. */
+  function moving(on) { if (world) world.layer.classList.toggle('w-moving', on); }
   /** Плавно перевести камеру в to (будь-які з x, y, z) за ms мілісекунд. */
   function camTo(to, ms) {
     var c = world.cam, from = { x: c.x, y: c.y, z: c.z }, t0 = performance.now();
@@ -2254,13 +2256,14 @@
     camClamp(goal);
     cancelAnimationFrame(world.anim);
     if (!ms || reduceMq.matches) { Object.assign(c, goal); camApply(); labelScale(); return; }
+    moving(true);
     (function step() {
       if (!world) return;
       var k = Math.min(1, (performance.now() - t0) / ms), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
       c.x = from.x + (goal.x - from.x) * e; c.y = from.y + (goal.y - from.y) * e; c.z = from.z + (goal.z - from.z) * e;
       camApply(true);
       if (k < 1) world.anim = requestAnimationFrame(step);
-      else labelScale();
+      else { moving(false); labelScale(); }
     })();
   }
   /** Поставити сцену за камерою. now — малювати рослини одразу (ми вже в кадрі анімації), інакше — у найближчому кадрі. */
@@ -2349,14 +2352,14 @@
     stage.addEventListener('pointermove', function (e) {
       if (!drag || !world) return;
       var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (!world.moved && Math.abs(dx) + Math.abs(dy) > 6) { world.moved = true; try { stage.setPointerCapture(drag.id); } catch (er) {} }
+      if (!world.moved && Math.abs(dx) + Math.abs(dy) > 6) { world.moved = true; moving(true); try { stage.setPointerCapture(drag.id); } catch (er) {} }
       if (!world.moved) return;
       world.cam.x = drag.cx - dx / world.cam.z;
       world.cam.y = drag.cy - dy / (world.cam.z * 0.56);
       camApply();
     });
     function end() {
-      if (drag && world.moved) labelScale();
+      if (drag && world.moved) { moving(false); labelScale(); }
       drag = null;
       setTimeout(function () { if (world) world.moved = false; }, 0);
     }
@@ -2446,6 +2449,7 @@
     ground.append(h('div', { class: 'w-edge front', style: 'top:' + L.H + 'px;width:' + L.GW + 'px' }),
       h('div', { class: 'w-edge side', style: 'height:' + L.H + 'px' }),
       h('div', { class: 'w-edge side', style: 'left:' + L.GW + 'px;height:' + L.H + 'px' }));
+    if (L.river) ground.insertAdjacentHTML('beforeend', W.waterSvg(L.river, 0) + W.waterSvg(L.river, 1));
     // туман над тим, що далі ніж на два кроки попереду; замок видно завжди
     var fogY = nowI < 0 ? 0 : P[Math.min(N + 1, nowI + 3)][1];
     if (fogY > 0) ground.append(h('div', { class: 'w-fog', style: 'height:' + fogY + 'px' }));

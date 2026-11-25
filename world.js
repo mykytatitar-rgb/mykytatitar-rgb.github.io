@@ -122,6 +122,19 @@
 
   /** y річки в точці x: хвиля, що точно проходить через міст. */
   function riverY(R, x) { return R.y + 24 * Math.sin((x - R.x) / 150); }
+  /** SVG-шлях річки; top — зсув угору (для шару відблисків, що стоїть від top). */
+  function riverPath(R, top) {
+    var d = '';
+    for (var x = -60; x <= GW + 60; x += 30) d += (d ? ' L' : 'M') + x + ' ' + r1(riverY(R, x) - top);
+    return d;
+  }
+  /** Відблиски ріки: два шари зі зсунутими штрихами, що по черзі проступають (мерехтіння прозорістю — справа компоновщика). */
+  var WATER_PAD = 60;
+  function waterSvg(R, phase) {
+    var top = R.y - WATER_PAD;
+    return '<svg class="w-water w-water' + phase + '" width="' + GW + '" height="' + 2 * WATER_PAD + '" viewBox="0 0 ' + GW + ' ' + 2 * WATER_PAD +
+      '" style="top:' + r1(top) + 'px" aria-hidden="true"><path class="wr-shine" style="stroke-dashoffset:' + (phase ? 29 : 0) + '" d="' + riverPath(R, top) + '"/></svg>';
+  }
 
   function zoneAtY(L, y) {
     for (var i = 0; i < L.zones.length; i++) if (y >= L.zones[i].y0 && y < L.zones[i].y1) return L.zones[i];
@@ -281,9 +294,9 @@
         '<path class="lk-shine" d="M' + r1(l.x - l.rx * 0.45) + ' ' + r1(l.y - l.ry * 0.3) + ' q' + r1(l.rx * 0.3) + ' -14 ' + r1(l.rx * 0.6) + ' 0"/>');
     });
     if (L.river) {
-      var d = '';
-      for (var x = -60; x <= GW + 60; x += 30) d += (d ? ' L' : 'M') + x + ' ' + r1(riverY(L.river, x));
-      o.push('<path class="wr-bank" d="' + d + '"/><path class="wr-water" d="' + d + '"/><path class="wr-deep" d="' + d + '"/><path class="wr-shine" d="' + d + '"/>');
+      var d = riverPath(L.river, 0);
+      // відблиски — окремими шарами над землею (waterSvg): анімація всередині землі перемальовувала б її щокадру
+      o.push('<path class="wr-bank" d="' + d + '"/><path class="wr-water" d="' + d + '"/><path class="wr-deep" d="' + d + '"/>');
     }
     // квіти: по одному шляху на колір (сотні кіл — це сотні вузлів)
     var fl = ['', '', '', ''];
@@ -490,7 +503,7 @@
   }
 
   window.SpravyWorld = {
-    TILT: TILT, CAM: CAM, project: project, unproject: unproject, mePoint: mePoint, sprite: sprite, spriteId: spriteId, SPRITE_VARS: SPRITE_VARS, layout: layout, groundSvg: groundSvg, roadPath: roadPath, art: art, skyAt: skyAt,
+    TILT: TILT, CAM: CAM, project: project, unproject: unproject, mePoint: mePoint, waterSvg: waterSvg, sprite: sprite, spriteId: spriteId, SPRITE_VARS: SPRITE_VARS, layout: layout, groundSvg: groundSvg, roadPath: roadPath, art: art, skyAt: skyAt,
     zoneOfStep: zoneOfStep, zoneInfo: zoneInfo, rnd: rnd, riverY: riverY
   };
 })();
