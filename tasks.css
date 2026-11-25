@@ -789,3 +789,5 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .breath { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .4rem; min-height: 2.6rem; }
 .breath-bar { flex-basis: 100%; height: 4px; border-radius: 2px; background: var(--accent); transform-origin: left; animation: breath-fill linear forwards; }
 @keyframes breath-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.easy-of { color: var(--muted); font-size: .9rem; margin-top: -.5rem; }
+.chip.total { color: var(--muted); }

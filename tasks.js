@@ -33,7 +33,11 @@
 
   var COLORS = ['#82c8b8', '#8fb0e0', '#e0a87c', '#d99aa8', '#b3a6e0', '#b9c67e', '#9aa0ad'];
   var SIZES = [['S', 15], ['M', 17], ['L', 19], ['XL', 21]];
-  var REPEATS = { none: 'Не повторювати', daily: 'Щодня', weekdays: 'Щобудні', weekly: 'Щотижня', monthly: 'Щомісяця' };
+  // wN — «N разів на тиждень» у будь-які дні: немає «пропущеного понеділка», лише скільки лишилось
+  var REPEATS = { none: 'Не повторювати', daily: 'Щодня', weekdays: 'Щобудні', w2: '2 рази на тиждень', w3: '3 рази на тиждень',
+    w4: '4 рази на тиждень', w5: '5 разів на тиждень', weekly: 'Щотижня', monthly: 'Щомісяця' };
+  /** Скільки разів на тиждень (для wN), інакше 0. */
+  function perWeek(rep) { var m = /^w([2-5])$/.exec(rep || ''); return m ? +m[1] : 0; }
 
   /* Матриця Ейзенгауера. Нічого окремо вводити не треба: важливе — із
      зірочкою, термінове — з датою на сьогодні чи раніше. Справ на майбутнє
@@ -132,6 +136,7 @@
         return n;
       }
       if (rep === 'monthly') { var x = parseDay(d); x.setMonth(x.getMonth() + 1); return iso(x); }
+      if (perWeek(rep)) return addDays(d, 1);
       return d;
     }
     var n = step(s || today());
@@ -248,7 +253,9 @@
       rank: Math.max(0, Math.round(Number(o.rank) || 0)), // місце в квадранті матриці; 0 — не переставляли
       seen: isDay(o.seen) ? o.seen : '',                   // коли справу востаннє чіпали; давно — вона йде в «Колись»
       habit: String(o.habit || ''),                        // у виконаної копії звички — id самої звички
-      after: String(o.after || '').slice(0, 80)            // якір звички: «після ранкової кави»
+      after: String(o.after || '').slice(0, 80),           // якір звички: «після ранкової кави»
+      easy: String(o.easy || '').slice(0, 120),            // мінімум звички на день, коли сил мало
+      easyDone: !!o.easyDone                               // у копії: зроблено мінімум
     };
   }
 
@@ -390,7 +397,7 @@
   function rollHabits() {
     var t0 = today(), n = 0;
     tasks().forEach(function (t) {
-      if (t.done || !t.due || t.due >= t0 || (t.repeat !== 'daily' && t.repeat !== 'weekdays')) return;
+      if (t.done || !t.due || t.due >= t0 || (t.repeat !== 'daily' && t.repeat !== 'weekdays' && !perWeek(t.repeat))) return;
       var d = t0;
       while (t.repeat === 'weekdays' && parseDay(d).getDay() % 6 === 0) d = addDays(d, 1);
       t.due = d;
@@ -403,13 +410,14 @@
      Ланцюжок, що обнуляється від одного пропуску, при СДУГ частіше вмикає сором, ніж мотивацію,
      а сором — поганий двигун. Тому рахуємо зроблені дні за тиждень (пропуски нічого не забирають)
      і після одного пропуску лише м'яко нагадуємо: головне — не пропустити вдруге. */
-  function isHabit(t) { return !t.parentId && (t.repeat === 'daily' || t.repeat === 'weekdays'); }
+  function isHabit(t) { return !t.parentId && (t.repeat === 'daily' || t.repeat === 'weekdays' || !!perWeek(t.repeat)); }
+  function mondayOf(d) { return addDays(d, -((parseDay(d).getDay() + 6) % 7)); }
   function habitDays(t) {
     var days = {};
     tasks().forEach(function (x) {
       if (!x.done || !x.doneAt || x === t) return;
       // старі копії (до посилання habit) впізнаємо за назвою й списком
-      if (x.habit === t.id || (!x.habit && x.repeat === 'none' && !x.parentId && x.listId === t.listId && x.title === t.title)) days[x.doneAt] = true;
+      if (x.habit === t.id || (!x.habit && x.repeat === 'none' && !x.parentId && x.listId === t.listId && x.title === t.title)) days[x.doneAt] = (days[x.doneAt] || 0) + 1;
     });
     return days;
   }
@@ -417,6 +425,14 @@
   /** { done, need } за останні 7 днів, включно з сьогодні; missed — учора пропущено, а сьогодні ще ні. */
   function habitWeek(t) {
     var days = habitDays(t), t0 = today(), done = 0, need = 0;
+    var n = perWeek(t.repeat);
+    // «N разів на тиждень» рахує рази; щоденні звички — дні
+    var total = Object.keys(days).reduce(function (s2, k2) { return s2 + (n ? days[k2] : 1); }, 0);
+    if (n) {
+      // норма календарного тижня (пн–нд): скільки вже, скільки треба; пропусків тут не буває
+      for (var k = mondayOf(t0); k <= t0; k = addDays(k, 1)) done += days[k] || 0;
+      return { done: done, need: n, missed: false, total: total, week: true };
+    }
     for (var i = 0; i < 7; i++) {
       var d = addDays(t0, -i);
       if (!habitNeeded(t, d)) continue;
@@ -425,7 +441,7 @@
     }
     var y = addDays(t0, -1);
     var any = Object.keys(days).length > 0;
-    return { done: done, need: need, missed: any && habitNeeded(t, y) && !days[y] && !days[t0] };
+    return { done: done, need: need, missed: any && habitNeeded(t, y) && !days[y] && !days[t0], total: total, week: false };
   }
 
   /** 5 хв, 1 год, 1,5 год, 2 год 15 хв. */
@@ -833,12 +849,17 @@
     toastTimer = setTimeout(function () { slot.replaceChildren(); }, ms || 5000);
   }
 
-  function toggleDone(t) {
+  /** opts.easy — зроблено мінімум звички: зараховується так само, лише позначається. */
+  function toggleDone(t, opts) {
     if (!t.done && t.repeat !== 'none') {
       var prevDue = t.due;
-      var copy = mkTask(Object.assign({}, t, { id: uid(), repeat: 'none', done: true, doneAt: today(), habit: t.id, after: '', rank: 0 }));
+      var copy = mkTask(Object.assign({}, t, { id: uid(), repeat: 'none', done: true, doneAt: today(), habit: t.id, after: '', easy: '', rank: 0,
+        easyDone: !!(opts && opts.easy), title: t.title }));
       db.tasks[copy.id] = copy;
-      t.due = nextDue(t.due, t.repeat);
+      var n = perWeek(t.repeat);
+      // норму тижня виконано — до понеділка; ні — знову завтра
+      if (n) t.due = habitWeek(t).done >= n ? addDays(mondayOf(today()), 7) : addDays(today(), 1);
+      else t.due = nextDue(t.due, t.repeat);
       commit();
       var next = dueLabel(t.due).toLowerCase();   // «пт, 30 жовт.» уже з крапкою
       toast('Зроблено! Наступний раз: ' + next + (/\.$/.test(next) ? '' : '.'), function () {
@@ -1235,8 +1256,10 @@
     if (t.est && !t.done) out.push(h('span', { class: 'chip', title: 'Скільки часу займе' }, svg(I.hourglass, 14), estLabel(t.est)));
     if (isHabit(t) && !t.done) {
       var hw = habitWeek(t);
-      out.push(h('span', { class: 'chip habit', title: 'Цього тижня зроблено ' + hw.done + ' з ' + hw.need + ' днів. Пропуск нічого не обнуляє: рахується кожен зроблений день.' },
-        svg(I.repeat, 14), hw.done + '/' + hw.need));
+      out.push(h('span', { class: 'chip habit', title: hw.week ? 'Цього тижня ' + hw.done + ' з ' + hw.need + ' разів, у будь-які дні.'
+          : 'Цього тижня зроблено ' + hw.done + ' з ' + hw.need + ' днів. Пропуск нічого не обнуляє: рахується кожен зроблений день.' },
+        svg(I.repeat, 14), hw.done + '/' + hw.need + (hw.week ? ' цього тижня' : '')));
+      if (hw.total) out.push(h('span', { class: 'chip total', title: 'Скільки разів зроблено за весь час. Не обнуляється.' }, 'всього ' + hw.total));
       if (hw.missed) out.push(h('span', { class: 'chip twice', title: 'Один пропуск — нормально. Головне — не пропустити двічі поспіль.' }, 'не пропустити вдруге'));
       if (t.after) out.push(h('span', { class: 'chip anchor', title: 'Якір: після чого робите' }, '↪ ' + t.after));
     }
@@ -1768,6 +1791,9 @@
       var l = listOf(t.listId);
       var step = sorted(childrenOf(t.id).filter(function (c) { return !c.done; }), 'mine')[0];
       var mins = timerMins(t);
+      // «Полегшити»: мінімум звички замість повної версії (і він зараховується); мало сил — одразу мінімум
+      var canEasy = !!t.easy && isHabit(t);
+      var easyOn = canEasy && (lowEnergy() || (ui.easyNow && ui.easyNow.id === t.id && ui.easyNow.day === today()));
       body = [
         h('article', { class: 'now-card' },
           h('div', { class: 'chips' },
@@ -1775,7 +1801,8 @@
             t.due ? h('span', { class: 'chip' + (t.due < today() ? ' late' : t.due === today() ? ' today' : '') }, svg(I.clock, 14), dueLabel(t.due)) : null,
             t.est ? h('span', { class: 'chip' }, svg(I.hourglass, 14), estLabel(t.est)) : null,
             l ? h('span', { class: 'chip list', style: '--c:' + l.color }, l.name) : null),
-          h('button', { type: 'button', class: 'now-title', title: 'Відкрити картку', onclick: function () { openDrawer(t.id); } }, t.title || 'Без назви'),
+          h('button', { type: 'button', class: 'now-title', title: 'Відкрити картку', onclick: function () { openDrawer(t.id); } }, easyOn ? t.easy : (t.title || 'Без назви')),
+          easyOn ? h('div', { class: 'easy-of' }, 'Мінімум замість «' + t.title + '». Теж зараховується.') : null,
           step ? h('div', { class: 'now-step' },
             h('button', { type: 'button', class: 'check', 'aria-label': 'Крок зроблено', onclick: function (e) { burst(e.currentTarget); toggleDone(step); } }),
             h('span', {}, h('small', {}, 'Перший крок'), step.title)) : needsStep(t) ? firstStepBox(t) : null,
@@ -1792,7 +1819,10 @@
               return h('button', { type: 'button', onclick: function () { startKick(t, m); } }, m + ' хв');
             })),
           h('div', { class: 'now-actions' },
-            h('button', { type: 'button', class: 'btn', onclick: function (e) { burst(e.currentTarget); toggleDone(t); } }, 'Готово'),
+            h('button', { type: 'button', class: 'btn', onclick: function (e) { burst(e.currentTarget); toggleDone(t, { easy: easyOn }); } }, 'Готово'),
+            canEasy && !lowEnergy() ? h('button', { type: 'button', class: 'btn', onclick: function () {
+              ui.easyNow = easyOn ? null : { id: t.id, day: today() }; saveUi(); render();
+            } }, easyOn ? 'Повна версія' : 'Полегшити') : null,
             h('button', { type: 'button', class: 'btn', onclick: function () { notNow(t, q.length); } }, 'Не зараз')),
           h('button', { type: 'button', class: 'quiet-link', onclick: function () { openHelp(t); } }, svg(I.knot, 16), 'Не можу взятися?')),
         q.length > 1 ? h('div', { class: 'now-next' }, 'Далі: ', h('b', {}, q[1].title || 'Без назви'),
@@ -2090,6 +2120,10 @@
     notes.value = t.notes;
     notes.addEventListener('input', function () { typed('notes', notes.value); });
     // звичку легше вбудувати в те, що вже робите щодня: «після кави — вітаміни»
+    // легка версія: краще мінімум, ніж нічого, і він зараховується
+    var easyIn = h('input', { id: 'd-easy', placeholder: 'Напр.: 15 хв розминки вдома', autocomplete: 'off', maxlength: '120' });
+    easyIn.value = t.easy;
+    easyIn.addEventListener('input', function () { typed('easy', easyIn.value); });
     var afterIn = h('input', { id: 'd-after', placeholder: 'Напр.: після ранкової кави', autocomplete: 'off', maxlength: '80' });
     afterIn.value = t.after;
     afterIn.addEventListener('input', function () { typed('after', afterIn.value); });
@@ -2136,6 +2170,7 @@
           h('div', { class: 'field' }, h('label', { for: 'd-due' }, 'Дата'), due),
           h('div', { class: 'field' }, h('label', { for: 'd-rep' }, 'Повтор'), rep)),
         isHabit(t) ? h('div', { class: 'field' }, h('label', { for: 'd-after' }, 'Після чого? (якір звички)'), afterIn) : null,
+        isHabit(t) ? h('div', { class: 'field' }, h('label', { for: 'd-easy' }, 'Мінімум, коли сил мало'), easyIn) : null,
         parent ? null : h('div', { class: 'row2' },
           h('div', { class: 'field' }, h('label', { for: 'd-start' }, 'Початок'), timeIn('d-start', t.start, function (v) { times(v, t.end); })),
           h('div', { class: 'field' }, h('label', { for: 'd-end' }, 'Кінець'), timeIn('d-end', t.end, function (v) { times(t.start, v); }))),
