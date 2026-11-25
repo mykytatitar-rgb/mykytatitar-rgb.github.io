@@ -906,3 +906,8 @@ body {
 .rm-step > span { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; font-weight: 600; }
 .rm-step small { font-weight: 500; color: var(--muted); font-size: .78rem; }
 .rm-step .btn { display: inline-flex; align-items: center; gap: .3rem; padding: .45rem .8rem; }
+.rm-empty .rm-ghost { height: 5.6rem; }
+.rm-empty .rm-ghost .rm-path { opacity: .45; }
+.rm-cands { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .2rem; }
+.rm-cands small { flex-basis: 100%; color: var(--muted); }
+.rm-cands .schip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

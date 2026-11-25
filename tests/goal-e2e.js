@@ -43,7 +43,15 @@ const errs = [];
     // «Зараз»: привітання з персонажем
     await D.click('#views .nav-item:has-text("Зараз")'); await sleep(300);
     assert(await D.locator('.hero svg.avatar').count() === 1, 'у «Зараз» — персонаж');
-    assert(await D.locator('.roadmap').count() === 0, 'цілі ще немає — дорожньої карти немає');
+    // цілі ще немає: на місці карти — запрошення поставити ціль (а не порожнеча)
+    const inv = D.locator('.roadmap.rm-empty');
+    assert(await inv.count() === 1, 'без цілі — запрошення «Поставте ціль»');
+    assert(/Finish ML course/.test(await inv.textContent().catch(() => '')), 'серед підказок — справа з кроками');
+    await inv.locator('input').fill('Learn Spanish'); await inv.locator('input').press('Enter'); await sleep(1600);
+    const sp = [...rows.values()].find(r => r.data.title === 'Learn Spanish');
+    assert(sp && sp.data.goal === true, 'нову ціль створено з поля');
+    assert(await D.locator('.roadmap:not(.rm-empty)').count() === 1 && /Learn Spanish/.test(await D.locator('.roadmap').textContent()), 'одразу її карта: «розбийте на кроки»');
+    // «Пізніше» ховає запрошення до завтра — перевіримо на іншій цілі нижче
     // зробити ціллю
     await D.click('#views .nav-item:has-text("Усі списки")'); await sleep(300);
     await D.locator('.col .done-toggle', { hasText: 'Заплановано' }).click(); await sleep(300);

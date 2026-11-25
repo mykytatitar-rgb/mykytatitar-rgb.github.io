@@ -1802,9 +1802,46 @@
   }
 
   /** Дорожня карта цілі: вузли кроків, персонаж на поточному, крок на сьогодні. */
+  /** Цілі ще немає: замість порожнечі — запрошення. Назвати нову або обрати з великих справ. */
+  function goalInvite() {
+    if (ui.goalLater === today()) return null;
+    var cands = tasks().filter(function (t) { return !t.done && !t.parentId && !isHabit(t) && t.title; })
+      .map(function (t) { return { t: t, steps: childrenOf(t.id).length }; })
+      .filter(function (x) { return x.steps || x.t.starred || (x.t.due && x.t.due > addDays(today(), 3)) || x.t.est >= 60; })
+      .sort(function (a, b) { return b.steps - a.steps || (b.t.starred - a.t.starred) || a.t.order - b.t.order; })
+      .slice(0, 4);
+    var input = h('input', { placeholder: 'Напр.: пройти курс з ML до кінця місяця', autocomplete: 'off', enterkeyhint: 'done', 'aria-label': 'Назва цілі' });
+    function create() {
+      var v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
+      if (!l) return;
+      var t = addTask(l.id, v, { due: '' });
+      setGoal(t);
+    }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); create(); } });
+    var track = h('div', { class: 'rm-track rm-ghost' });
+    track.innerHTML = '<svg viewBox="0 0 320 96" preserveAspectRatio="none" aria-hidden="true"><path d="M0 70 C 60 70 60 34 120 34 C 180 34 180 66 240 66 C 290 66 300 40 320 40" class="rm-path"/></svg>';
+    var me = h('span', { class: 'rm-me', style: 'left:8%;top:72%' });
+    me.append(avatarEl('happy', 44));
+    track.append(me, h('span', { class: 'rm-node locked', style: 'left:92%;top:42%' }, svg(I.flag, 16, 2.2)));
+    return h('section', { class: 'roadmap rm-empty', 'aria-label': 'Поставити ціль' },
+      h('div', { class: 'rm-head' }, h('span', { class: 'rm-kicker' }, svg(I.target, 14), 'Ціль'),
+        h('button', { type: 'button', class: 'link-btn', onclick: function () { ui.goalLater = today(); saveUi(); render(); } }, 'Пізніше')),
+      h('div', { class: 'rm-title' }, 'До чого йдете?'),
+      h('div', { class: 'rm-info' }, 'Велика справа, до якої йдете кроками. Тут буде її дорожня карта: що пройдено й що далі.'),
+      track,
+      h('div', { class: 'first-step-row' }, input, h('button', { type: 'button', class: 'btn primary', onclick: create }, 'Поставити')),
+      cands.length ? h('div', { class: 'rm-cands' }, h('small', {}, 'Або оберіть з наявних:'),
+        cands.map(function (x) {
+          return h('button', { type: 'button', class: 'schip', onclick: function () { setGoal(x.t); } },
+            x.t.title + (x.steps ? ' · ' + x.steps + ' ' + forms(x.steps, 'крок', 'кроки', 'кроків') : ''));
+        })) : null);
+  }
+
   function roadmap() {
     var g = goalTask();
-    if (!g) return null;
+    if (!g) return goalInvite();
     var nodes, info, step = null, isH = isHabit(g);
     if (isH) {
       var hw = habitWeek(g);
