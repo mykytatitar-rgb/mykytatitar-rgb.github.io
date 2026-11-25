@@ -924,3 +924,6 @@ body {
 .goal-view .rm-track { height: 9rem; }
 .goal-steps { display: flex; flex-direction: column; margin-top: .3rem; }
 .goal-steps .group-label { margin: .9rem 0 .3rem; }
+.vcap-target { border: 1px solid var(--line); border-radius: 999px; padding: .25rem .65rem; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vcap-target.goal { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.rm-add .voice { display: inline-flex; align-items: center; }

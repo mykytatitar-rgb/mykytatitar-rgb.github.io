@@ -1998,7 +1998,7 @@
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } });
     if (goalDraft.focused) setTimeout(function () { input.focus(); });
     return h('div', { class: 'rm-add-wrap' },
-      h('div', { class: 'rm-add first-step-row' }, input, h('button', { type: 'button', class: 'btn', onclick: add }, svg(I.addTask, 16), 'Крок')),
+      h('div', { class: 'rm-add first-step-row' }, input, micFor(input, add), h('button', { type: 'button', class: 'btn', onclick: add }, svg(I.addTask, 16), 'Крок')),
       h('button', { type: 'button', class: 'link-btn', onclick: function () { openAttach(g); } }, 'Додати наявні справи, зокрема виконані'));
   }
 
@@ -3314,7 +3314,8 @@
   var VOICE = ['uk', 'en', 'es'];
 
   /** Мікрофон і перемикач мови біля поля. Розпізнане йде в поле, щоб його можна було виправити. */
-  function micFor(input) {
+  /** onFinal — якщо передано, викликається з остаточно розпізнаним текстом (напр. одразу додати крок). */
+  function micFor(input, onFinal) {
     var L = window.SpravyLingo;
     if (!L || !L.canListen) return null;     // браузер не вміє — кнопки немає
     var lang = VOICE.indexOf(ui.voiceLang) >= 0 ? ui.voiceLang : 'uk';
@@ -3326,9 +3327,10 @@
     var mic = h('button', { type: 'button', class: 'mic', 'aria-label': 'Надиктувати', title: 'Надиктувати', onpointerdown: keep, onmousedown: keep,
       onclick: function () {
         base = input.value.trim();
-        L.listen(lang, function (text) {
+        L.listen(lang, function (text, final) {
           input.value = (base ? base + ' ' : '') + text;
           input.dispatchEvent(new Event('input', { bubbles: true }));
+          if (final && onFinal) onFinal();
         }, function (on, err) {
           mic.classList.toggle('rec', on);
           mic.setAttribute('aria-pressed', String(on));
@@ -3373,6 +3375,17 @@
 
   function voiceLang() { return VOICE.indexOf(ui.voiceLang) >= 0 ? ui.voiceLang : 'uk'; }
 
+  /** Куди йде надиктоване: у список чи кроком у ціль (якщо ціль є). Вибір запам'ятовується. */
+  function voiceGoal() { var g = goalTask(); return ui.voiceTarget === 'goal' && g && !isHabit(g) ? g : null; }
+  function voiceTargetBtn(state, text, list) {
+    var g = goalTask(), toGoal = voiceGoal();
+    if (!g || isHabit(g)) return h('span', { class: 'vcap-list', style: '--c:' + (list ? list.color : '') }, list ? list.name : '');
+    return h('button', { type: 'button', class: 'vcap-list vcap-target' + (toGoal ? ' goal' : ''), style: '--c:' + (list ? list.color : ''),
+      title: 'Куди додавати: у список чи кроком цілі', onclick: function () {
+        ui.voiceTarget = toGoal ? '' : 'goal'; saveUi(); paintVoice(state, text);
+      } }, toGoal ? 'Крок цілі «' + g.title + '»' : (list ? list.name : ''), svg(I.chev, 14));
+  }
+
   function paintVoice(state, text) {
     var L = window.SpravyLingo, v = vcap;
     var list = listOf(v.listId);
@@ -3384,7 +3397,7 @@
       onclick: function () { if (state === 'listen') L.stopListening(); else listenVoice(); } }, svg(I.mic, 34));
     var body;
     if (state === 'listen') body = [h('div', { class: 'vcap-say' }, text || 'Слухаю…'), h('div', { class: 'vcap-hint' }, 'Скажіть справу. «Завтра» чи «сьогодні» стане датою.')];
-    else if (state === 'added') body = [h('div', { class: 'vcap-ok' }, '✓ Додано'), h('div', { class: 'vcap-say' }, v.last.title),
+    else if (state === 'added') body = [h('div', { class: 'vcap-ok' }, v.last.parentId ? '✓ Додано кроком цілі' : '✓ Додано'), h('div', { class: 'vcap-say' }, v.last.title),
       v.last.due ? h('div', { class: 'vcap-hint' }, dueLabel(v.last.due)) : null];
     else body = [h('div', { class: 'vcap-say' }, 'Нічого не почув'), h('div', { class: 'vcap-hint' }, text || 'Натисніть «Спробувати ще» і скажіть ще раз.')];
     function closeBtn(label) { return h('button', { type: 'button', class: 'btn', onclick: function () { closeVoice(); } }, label); }
@@ -3393,7 +3406,7 @@
           h('button', { type: 'button', class: 'btn primary', onclick: listenVoice }, 'Ще одну')]
       : [closeBtn('Закрити'), h('button', { type: 'button', class: 'btn primary', onclick: listenVoice }, 'Спробувати ще')];
     v.box.replaceChildren(h('div', { class: 'vcap-card' },
-      h('div', { class: 'vcap-top' }, h('span', { class: 'vcap-list', style: '--c:' + (list ? list.color : '') }, list ? list.name : ''), lang),
+      h('div', { class: 'vcap-top' }, voiceTargetBtn(state, text, list), lang),
       big, body, h('div', { class: 'vcap-btns' }, buttons)));
   }
 
@@ -3413,7 +3426,12 @@
       var x = L.spokenTask(heard, today());
       if (!x.title) return paintVoice('quiet', err && err !== 'no-speech' && err !== 'aborted' ? 'Не вдалося розпізнати. Спробуйте ще раз.' : '');
       v.run++;                                    // onend після onerror не має додати вдруге
-      v.last = addTask(v.listId, x.title, x.due ? { due: x.due } : {});
+      var g = voiceGoal();
+      if (g) {
+        var max = 0;
+        childrenOf(g.id).forEach(function (c) { if (c.order > max) max = c.order; });
+        v.last = addTask(g.listId, x.title, { parentId: g.id, order: max + 1, starred: false, due: x.due || '' });
+      } else v.last = addTask(v.listId, x.title, x.due ? { due: x.due } : {});
       if (navigator.vibrate) navigator.vibrate(30);
       paintVoice('added');
     });
