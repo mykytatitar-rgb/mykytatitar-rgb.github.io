@@ -204,6 +204,8 @@
     play: '<path d="M8 5.5l10.5 6.5L8 18.5z"/>',
     bolt: '<path d="M13.5 3L5.5 13.5h6L10.5 21l8-10.5h-6z"/>',
     spell: '<path d="M4 17l4-11 4 11M5.5 13h5"/><path d="M13.5 15.5l2.5 2.5 4.5-5"/>',
+    flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+    check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     moon: '<path d="M19.5 14.5A8 8 0 019.5 4.5a8 8 0 1010 10z"/>',
     image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5L5 19.5"/>',
     cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
@@ -255,7 +257,8 @@
       habit: String(o.habit || ''),                        // у виконаної копії звички — id самої звички
       after: String(o.after || '').slice(0, 80),           // якір звички: «після ранкової кави»
       easy: String(o.easy || '').slice(0, 120),            // мінімум звички на день, коли сил мало
-      easyDone: !!o.easyDone                               // у копії: зроблено мінімум
+      easyDone: !!o.easyDone,                              // у копії: зроблено мінімум
+      goal: !!o.goal                                       // ціль (одна на раз): її кроки — підзавдання
     };
   }
 
@@ -1715,7 +1718,9 @@
     var done = sorted(tasks().filter(function (t) { return t.done && !t.parentId && t.doneAt === t0; }), 'mine');
 
     b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
-      h('h2', {}, 'Сьогодні'),
+      h('h2', { class: 'sr-only' }, 'Сьогодні'),
+      hero('today'),
+      roadmap(),
       eveningInvite() || planInvite(false),
       focus.length ? [
         h('div', { class: 'group-row' },
@@ -1738,6 +1743,108 @@
       done.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
         done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })] : null,
       h('button', { type: 'button', class: 'quiet-link close-day', onclick: openEvening }, svg(I.moon || I.target, 16), 'Закрити день')));
+  }
+
+  /* ============================================================
+     Привітання з персонажем і ціль з дорожньою картою
+     Ціль — будь-яка справа з позначкою «Ціль» (одна на раз); кроки — її
+     підзавдання. Ціль-звичка показує тижневу норму. Персонаж стоїть на
+     поточному кроці: видно, скільки пройдено й що далі.
+     ============================================================ */
+  function avatarEl(mood, size) {
+    var s = document.createElement('span');
+    s.className = 'av';
+    s.innerHTML = window.SpravyAvatar ? window.SpravyAvatar.svg(mood, size) : '';
+    return s;
+  }
+  function goalTask() { return tasks().filter(function (t) { return t.goal && !t.done && !t.parentId; })[0] || null; }
+  function setGoal(t) {
+    var on = !t.goal;
+    tasks().forEach(function (x) { if (x.goal) x.goal = false; });
+    t.goal = on;
+    commit();
+    if (on) toast('Ціль: «' + t.title + '». Її дорожня карта — у «Зараз» і «Сьогодні».');
+  }
+
+  function hero(kind) {
+    var hr = new Date().getHours(), t0 = today();
+    var focus = focusToday(), fDone = focus.filter(function (t) { return t.done; }).length;
+    var doneToday = tasks().filter(function (t) { return t.done && t.doneAt === t0 && !t.parentId; }).length;
+    var allFocus = focus.length && fDone === focus.length;
+    var mood = allFocus || doneToday >= 3 ? 'cheer' : lowEnergy() || hr >= 21 ? 'calm' : 'happy';
+    var hello = hr < 5 ? 'Доброї ночі' : hr < 12 ? 'Доброго ранку' : hr < 18 ? 'Добрий день' : 'Добрий вечір';
+    var line = allFocus ? 'Головне на сьогодні зроблено. День уже вдався.'
+      : doneToday ? 'Сьогодні вже ' + doneToday + ' ' + (doneToday === 1 ? 'справа' : doneToday < 5 ? 'справи' : 'справ') + '. Так тримати.'
+      : lowEnergy() ? 'Сил мало — беремо найменший крок.'
+      : kind === 'now' ? 'Одна справа. Один крок. Поїхали.' : 'Що зробить цей день вдалим?';
+    return h('section', { class: 'hero' },
+      h('div', { class: 'hero-text' },
+        h('div', { class: 'hero-hello' }, hello),
+        h('div', { class: 'hero-title' }, kind === 'now' ? 'Крок ' : 'План ', h('em', {}, 'на сьогодні')),
+        h('div', { class: 'hero-line' }, line),
+        focus.length ? h('div', { class: 'hero-stats' },
+          h('span', {}, svg(I.target, 14), 'Головне ' + fDone + '/' + focus.length),
+          doneToday ? h('span', {}, svg(I.check || I.addTask, 14), 'Зроблено ' + doneToday) : null) : null),
+      avatarEl(mood, 108));
+  }
+
+  /** Дорожня карта цілі: вузли кроків, персонаж на поточному, крок на сьогодні. */
+  function roadmap() {
+    var g = goalTask();
+    if (!g) return null;
+    var nodes, info, step = null, isH = isHabit(g);
+    if (isH) {
+      var hw = habitWeek(g);
+      nodes = [];
+      for (var i = 0; i < hw.need; i++) nodes.push({ state: i < hw.done ? 'done' : i === hw.done ? 'now' : 'locked' });
+      info = hw.done + '/' + hw.need + (hw.week ? ' цього тижня' : ' за тиждень') + (hw.total ? ' · всього ' + hw.total : '');
+    } else {
+      var steps = sorted(childrenOf(g.id), 'mine');
+      var cur = steps.filter(function (s) { return !s.done; })[0];
+      step = cur || null;
+      nodes = steps.map(function (s) { return { state: s.done ? 'done' : s === cur ? 'now' : 'locked', title: s.title }; });
+      info = steps.length ? steps.filter(function (s) { return s.done; }).length + '/' + steps.length + ' кроків' : 'Розбийте ціль на 3–5 кроків';
+    }
+    // у звички дата — наступний раз, а не дедлайн
+    var left = g.due && !isH ? Math.round((parseDay(g.due) - parseDay(today())) / 864e5) : null;
+    var dl = left === null ? null : left < 0 ? 'дедлайн минув' : left === 0 ? 'сьогодні дедлайн'
+      : 'до ' + parseDay(g.due).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) + ' · ' + left + ' ' + forms(left, 'день', 'дні', 'днів');
+    // вузли на хвилястій доріжці; довгу ціль показуємо вікном навколо поточного кроку
+    var MAX = 6, nowI = Math.max(0, nodes.findIndex(function (n) { return n.state === 'now'; }));
+    var from = Math.max(0, Math.min(nowI - 2, nodes.length - MAX)), shown = nodes.slice(from, from + MAX);
+    var W = 320, H = 96, n = shown.length || 1;
+    var pts = shown.map(function (_, k) { var x = n === 1 ? W / 2 : 24 + k * (W - 48) / (n - 1); return [x, k % 2 ? 34 : 66]; });
+    // плавна доріжка: від лівого краю через усі вузли до правого (кожна крива — 3 точки)
+    var all = [[0, 60]].concat(pts, [[W, 50]]);
+    var d = 'M' + all[0][0] + ' ' + all[0][1] + all.slice(1).map(function (p, k) {
+      var prev = all[k], mx = (prev[0] + p[0]) / 2;
+      return ' C ' + mx + ' ' + prev[1] + ' ' + mx + ' ' + p[1] + ' ' + p[0] + ' ' + p[1];
+    }).join('');
+    var track = h('div', { class: 'rm-track' });
+    track.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" class="rm-path"/></svg>';
+    shown.forEach(function (nd, k) {
+      var el = h('span', { class: 'rm-node ' + nd.state, style: 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%',
+        title: nd.title || '' }, nd.state === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16, 3) : nd.state === 'locked'
+          ? svg('<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 016 0v3"/>', 14, 2) : svg(I.target, 16, 2.2));
+      track.append(el);
+      if (nd.state === 'now') {
+        var me = h('span', { class: 'rm-me', style: 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%' });
+        me.append(avatarEl('happy', 44));
+        track.append(me);
+      }
+    });
+    return h('section', { class: 'roadmap', 'aria-label': 'Ціль' },
+      h('div', { class: 'rm-head' },
+        h('span', { class: 'rm-kicker' }, svg(I.target, 14), 'Ціль'),
+        dl ? h('span', { class: 'rm-deadline' + (left !== null && left <= 2 ? ' soon' : '') }, svg(I.cal, 14), dl) : null),
+      h('button', { type: 'button', class: 'rm-title', onclick: function () { openDrawer(g.id); } }, g.title),
+      h('div', { class: 'rm-info' }, info),
+      nodes.length ? track : null,
+      step ? h('div', { class: 'rm-step' },
+        h('button', { type: 'button', class: 'check', 'aria-label': 'Крок зроблено', onclick: function (e) { burst(e.currentTarget); toggleDone(step); } }),
+        h('span', {}, h('small', {}, 'Крок на сьогодні'), step.title),
+        h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(step); } }, svg(I.play, 14), 'Почати')) : null,
+      !isH && !nodes.length ? firstStepBox(g) : null);
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
@@ -1830,7 +1937,9 @@
       ];
     }
     b.replaceChildren(installBar() || '', h('section', { class: 'flat now' },
+      hero('now'),
       h('div', { class: 'now-head' }, h('h2', {}, 'Зараз'), energy),
+      roadmap(),
       eveningInvite() || planInvite(true),
       body));
   }
@@ -2156,6 +2265,8 @@
             onclick: function () { toggleStar(t); } }, svg(I.star, 16, 1.8), 'Важливо'),
           h('button', { type: 'button', class: 'flag' + (isFocus(t) ? ' on' : ''), 'aria-pressed': String(isFocus(t)),
             onclick: function () { toggleFocus(t); } }, svg(I.target, 16), 'Головне сьогодні'),
+          h('button', { type: 'button', class: 'flag' + (t.goal ? ' on' : ''), 'aria-pressed': String(t.goal),
+            title: 'Велика ціль з дорожньою картою: кроки — підзавдання', onclick: function () { setGoal(t); } }, svg(I.flag || I.target, 16), 'Ціль'),
           h('span', { class: 'd-quad' }, isFuture(t)
             ? 'Заплановано: з\'явиться в списку ' + dueLabel(t.due).toLowerCase()
             : 'Матриця: ' + QUADS[quadrant(t)].name.toLowerCase())),

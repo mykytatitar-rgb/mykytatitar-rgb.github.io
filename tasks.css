@@ -791,3 +791,118 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 @keyframes breath-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .easy-of { color: var(--muted); font-size: .9rem; margin-top: -.5rem; }
 .chip.total { color: var(--muted); }
+
+/* ======================================================================
+   Новий вигляд: «сутінки в горах». Глибокий фіолетовий, теплий помаранчевий
+   акцент, скляні картки, привітання з персонажем і дорожня карта цілі.
+   Шар зверху: перевизначає палітру й додає нові частини, не ламаючи старих.
+   ====================================================================== */
+:root {
+  --bg: #141126; --surface: #1d1934; --surface-2: #27213f; --line: #352d50;
+  --fg: #eeebf8; --muted: #a9a2c2; --faint: #766e93;
+  --accent: #ff9b45; --accent-2: #ff6f3c; --accent-ink: #2a1200; --accent-soft: rgba(255, 155, 69, .15);
+  --warn: #ff7d6e; --warn-soft: rgba(255, 125, 110, .14); --star: #ffc95c; --sky: #a1b4ff;
+  --violet: #8b6cff; --violet-soft: rgba(139, 108, 255, .16);
+  --shadow: 0 14px 40px rgba(6, 3, 20, .5);
+  --glow: 0 8px 24px rgba(255, 122, 47, .35);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f2fb; --surface: #ffffff; --surface-2: #f1edf9; --line: #e3dcf1;
+    --fg: #221c36; --muted: #625a7c; --faint: #9a92b2;
+    --accent: #e8661a; --accent-2: #d94a1e; --accent-ink: #ffffff; --accent-soft: rgba(232, 102, 26, .12);
+    --warn: #cf4b3a; --warn-soft: rgba(207, 75, 58, .1); --star: #d4950a; --sky: #5266d6;
+    --violet: #6d4fe0; --violet-soft: rgba(109, 79, 224, .1);
+    --shadow: 0 12px 32px rgba(60, 40, 110, .12); --glow: 0 8px 20px rgba(232, 102, 26, .28);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f2fb; --surface: #ffffff; --surface-2: #f1edf9; --line: #e3dcf1;
+  --fg: #221c36; --muted: #625a7c; --faint: #9a92b2;
+  --accent: #e8661a; --accent-2: #d94a1e; --accent-ink: #ffffff; --accent-soft: rgba(232, 102, 26, .12);
+  --warn: #cf4b3a; --warn-soft: rgba(207, 75, 58, .1); --star: #d4950a; --sky: #5266d6;
+  --violet: #6d4fe0; --violet-soft: rgba(109, 79, 224, .1);
+  --shadow: 0 12px 32px rgba(60, 40, 110, .12); --glow: 0 8px 20px rgba(232, 102, 26, .28);
+}
+body {
+  background-color: var(--bg);
+  background-image: radial-gradient(60rem 30rem at 10% -10%, var(--violet-soft), transparent 70%),
+    radial-gradient(40rem 24rem at 110% 110%, var(--accent-soft), transparent 70%);
+  background-attachment: fixed;
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* кнопки: головна — теплий градієнт зі світінням */
+.btn { border-radius: .95rem; transition: transform .12s, box-shadow .15s, background .15s; }
+.btn:active { transform: scale(.97); }
+.btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); box-shadow: var(--glow); }
+.task.done .check, .task.completing .check { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; }
+.fab { background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: var(--glow); border-radius: 50%; }
+
+/* картки й колонки: м'яке скло */
+.col, .now-card, .now-empty, .quad, .flat > .task, .plan-card, .drawer, .modal, .add-sheet {
+  border: 1px solid var(--line);
+}
+.col, .quad { border-radius: 1.3rem; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(8px); }
+.now-card { border-radius: 1.5rem; background: linear-gradient(160deg, var(--surface-2), var(--surface)); box-shadow: var(--shadow); }
+.chip { border-radius: 999px; }
+.chip.focus { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- привітання з персонажем ---------- */
+.hero {
+  position: relative; overflow: hidden; display: flex; align-items: flex-end; justify-content: space-between; gap: .5rem;
+  margin: .3rem .55rem .9rem; padding: 1.1rem 1.1rem 0 1.3rem; min-height: 9.5rem; border-radius: 1.6rem; color: #fff;
+  background: linear-gradient(180deg, #2a2156 0%, #4a2f73 55%, #8a3f6d 85%, #d9653f 100%);
+  box-shadow: var(--shadow);
+}
+/* сонце й гори за горизонтом */
+.hero::before {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 62%; pointer-events: none;
+  background:
+    radial-gradient(2.6rem 2.6rem at 64% 78%, rgba(255, 196, 120, .95), rgba(255, 150, 80, .45) 45%, transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 100' preserveAspectRatio='none'%3E%3Cpath d='M0 70 L60 38 L95 58 L150 22 L205 62 L250 40 L300 66 L350 30 L400 55 V100 H0Z' fill='%23321f55' opacity='.85'/%3E%3Cpath d='M0 85 L70 60 L120 78 L180 52 L240 80 L300 62 L360 82 L400 70 V100 H0Z' fill='%231c1438'/%3E%3C/svg%3E") bottom / 100% 100% no-repeat;
+}
+.hero > * { position: relative; }
+.hero-text { padding-bottom: 1.1rem; min-width: 0; }
+.hero-hello { font-size: .85rem; opacity: .8; }
+.hero-title { font-family: var(--font-display); font-weight: 700; font-size: 1.75rem; line-height: 1.1; margin: .15rem 0 .35rem; }
+.hero-title em { font-style: normal; background: linear-gradient(90deg, #ffc46b, #ff8a3d); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero-line { font-size: .92rem; opacity: .88; max-width: 22rem; }
+.hero-stats { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.hero-stats span { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .6rem; border-radius: 999px; background: rgba(255, 255, 255, .14); font-size: .8rem; backdrop-filter: blur(6px); }
+.hero .av { flex: none; align-self: flex-end; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .35)); }
+.hero .av svg { display: block; margin-bottom: -4px; }
+@media (max-width: 760px) {
+  .hero { min-height: 8.4rem; padding-left: 1.1rem; }
+  .hero-title { font-size: 1.45rem; }
+  .hero .av svg { width: 88px; height: auto; }
+}
+
+/* ---------- дорожня карта цілі ---------- */
+.roadmap {
+  margin: 0 .55rem .9rem; padding: 1rem 1.1rem 1.1rem; border-radius: 1.5rem; border: 1px solid var(--line);
+  background: linear-gradient(160deg, var(--surface-2), var(--surface)); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: .35rem;
+}
+.rm-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; font-size: .82rem; color: var(--muted); }
+.rm-kicker, .rm-deadline { display: inline-flex; align-items: center; gap: .35rem; }
+.rm-kicker { color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.rm-deadline.soon { color: var(--warn); }
+.rm-title { text-align: left; font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; line-height: 1.2; overflow-wrap: anywhere; }
+.rm-info { color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.rm-track { position: relative; height: 7.2rem; margin: .4rem .2rem .2rem; }
+.rm-track > svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.rm-path { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 2 9; stroke-linecap: round; opacity: .7; vector-effect: non-scaling-stroke; }
+.rm-node {
+  position: absolute; transform: translate(-50%, -50%); width: 2.3rem; height: 2.3rem; border-radius: 50%;
+  display: grid; place-items: center; border: 2px solid var(--line); background: var(--surface-2); color: var(--faint);
+}
+.rm-node.done { background: linear-gradient(135deg, #48c78e, #2fa36f); border-color: transparent; color: #fff; box-shadow: 0 4px 12px rgba(47, 163, 111, .4); }
+.rm-node.now { width: 2.7rem; height: 2.7rem; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: var(--accent-ink); box-shadow: var(--glow); }
+.rm-me { position: absolute; transform: translate(-50%, -108%); pointer-events: none; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .35)); animation: rm-bob 2.4s ease-in-out infinite; }
+.rm-me svg { display: block; }
+@keyframes rm-bob { 50% { transform: translate(-50%, -114%); } }
+.rm-step { display: flex; align-items: center; gap: .7rem; padding: .7rem .8rem; border-radius: 1rem; background: var(--accent-soft); }
+.rm-step > span { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; font-weight: 600; }
+.rm-step small { font-weight: 500; color: var(--muted); font-size: .78rem; }
+.rm-step .btn { display: inline-flex; align-items: center; gap: .3rem; padding: .45rem .8rem; }
