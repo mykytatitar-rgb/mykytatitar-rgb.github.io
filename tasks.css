@@ -927,3 +927,51 @@ body {
 .vcap-target { border: 1px solid var(--line); border-radius: 999px; padding: .25rem .65rem; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vcap-target.goal { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .rm-add .voice { display: inline-flex; align-items: center; }
+
+/* ---------- розділ «Ціль»: дві колонки, підписана доріжка, панель ---------- */
+.goal-grid { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 1.1rem; align-items: start; }
+.goal-main { min-width: 0; }
+.goal-view .rm-track.rm-wide { height: 11.5rem; margin-bottom: 1.6rem; }
+.flat.wide.goal-view { width: min(84rem, 100%); }
+.rm-track .rm-node { cursor: default; }
+.rm-track button.rm-node { cursor: pointer; font: inherit; font-weight: 700; font-size: .85rem; transition: transform .15s; }
+.rm-track button.rm-node:hover { transform: translate(-50%, -50%) scale(1.1); }
+.rm-node.locked { color: var(--muted); }
+.rm-label {
+  position: absolute; transform: translate(-50%, 1.6rem); width: max-content; max-width: 8.5rem; padding: .15rem .45rem;
+  border-radius: .5rem; background: var(--surface); font-size: .74rem; line-height: 1.25; text-align: center; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; pointer-events: none;
+}
+.rm-label.done { color: #2fa36f; }
+.rm-label.now { color: var(--text, inherit); font-weight: 700; background: var(--accent-soft); transform: translate(-50%, 1.85rem); }
+.rm-label.finish { color: var(--accent); font-weight: 600; }
+.goal-side { display: flex; flex-direction: column; gap: .8rem; position: sticky; top: .5rem; }
+.gp-card { border: 1px solid var(--line); border-radius: 1.1rem; padding: .85rem .95rem; background: var(--surface-2); display: flex; flex-direction: column; gap: .5rem; }
+.gp-title { display: flex; align-items: center; gap: .4rem; font-weight: 700; font-size: .92rem; }
+.gp-title svg { color: var(--accent); }
+.gp-card textarea, .gp-card input { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: .7rem; padding: .5rem .6rem; font: inherit; font-size: .9rem; resize: vertical; color: inherit; }
+.gp-card textarea:focus, .gp-card input:focus { outline: none; border-color: var(--accent); }
+.gp-hint { color: var(--muted); font-size: .78rem; line-height: 1.35; }
+.gp-if { display: flex; align-items: center; gap: .5rem; }
+.gp-if span { flex: 0 0 2.6rem; font-size: .82rem; font-weight: 600; color: var(--accent); }
+.gp-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; text-align: center; }
+.gp-nums b { display: block; font-family: var(--font-display); font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.gp-nums small { color: var(--muted); font-size: .72rem; line-height: 1.2; display: block; }
+.gp-bars { display: flex; align-items: flex-end; gap: 4px; height: 3.2rem; padding-top: .2rem; }
+.gp-bars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.gp-bars i.now { background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
+.gp-eta { font-size: .84rem; line-height: 1.4; color: var(--muted); }
+.gp-eta.late { color: var(--warn); }
+.gp-wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; }
+.gp-wins li { display: flex; justify-content: space-between; gap: .5rem; font-size: .86rem; }
+.gp-wins li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-wins li span::before { content: '✓ '; color: #2fa36f; font-weight: 700; }
+.gp-wins small { color: var(--muted); flex: none; }
+@media (max-width: 1100px) {
+  .goal-grid { grid-template-columns: minmax(0, 1fr); }
+  .goal-side { position: static; }
+}
+@media (max-width: 760px) {
+  .rm-label { display: none; }
+  .goal-view .rm-track.rm-wide { height: 9rem; margin-bottom: .2rem; }
+}

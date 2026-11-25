@@ -262,7 +262,10 @@
       after: String(o.after || '').slice(0, 80),           // якір звички: «після ранкової кави»
       easy: String(o.easy || '').slice(0, 120),            // мінімум звички на день, коли сил мало
       easyDone: !!o.easyDone,                              // у копії: зроблено мінімум
-      goal: !!o.goal                                       // ціль (одна на раз): її кроки — підзавдання
+      goal: !!o.goal,                                      // ціль (одна на раз): її кроки — підзавдання
+      why: String(o.why || '').slice(0, 300),              // у цілі: навіщо, що зміниться (WOOP: бажання й результат)
+      obstacle: String(o.obstacle || '').slice(0, 160),    // у цілі: головна перешкода
+      ifThen: String(o.ifThen || '').slice(0, 160)         // у цілі: план «якщо перешкода — то я…»
     };
   }
 
@@ -1841,7 +1844,7 @@
         })) : null);
   }
 
-  function roadmap() {
+  function roadmap(wide) {
     var g = goalTask();
     if (!g) return goalInvite();
     var nodes, info, step = null, isH = isHabit(g);
@@ -1854,7 +1857,7 @@
       var steps = sorted(childrenOf(g.id), 'mine');
       var cur = steps.filter(function (s) { return !s.done; })[0];
       step = cur || null;
-      nodes = steps.map(function (s) { return { state: s.done ? 'done' : s === cur ? 'now' : 'locked', title: s.title }; });
+      nodes = steps.map(function (s, i) { return { state: s.done ? 'done' : s === cur ? 'now' : 'locked', title: s.title, n: i + 1, id: s.id }; });
       // без кроків — порожні місця, щоб доріжку було видно одразу
       if (!steps.length) nodes = [{ state: 'slot' }, { state: 'slot' }, { state: 'slot' }];
       var doneN = steps.filter(function (s) { return s.done; }).length;
@@ -1866,7 +1869,7 @@
     var dl = left === null ? null : left < 0 ? 'дедлайн минув' : left === 0 ? 'сьогодні дедлайн'
       : 'до ' + parseDay(g.due).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) + ' · ' + left + ' ' + forms(left, 'день', 'дні', 'днів');
     // вузли на хвилястій доріжці; довгу ціль показуємо вікном навколо поточного кроку
-    var MAX = 6, nowI = Math.max(0, nodes.findIndex(function (n) { return n.state === 'now'; }));
+    var MAX = wide ? 7 : 6, nowI = Math.max(0, nodes.findIndex(function (n) { return n.state === 'now'; }));
     var from = Math.max(0, Math.min(nowI - 2, nodes.length - MAX)), shown = nodes.slice(from, from + MAX);
     // фініш — прапорець наприкінці (у цілі-справи; у звички тиждень і є вся доріжка)
     if (!isH && from + MAX >= nodes.length) shown = shown.concat({ state: 'finish', title: g.title });
@@ -1878,15 +1881,24 @@
       var prev = all[k], mx = (prev[0] + p[0]) / 2;
       return ' C ' + mx + ' ' + prev[1] + ' ' + mx + ' ' + p[1] + ' ' + p[0] + ' ' + p[1];
     }).join('');
-    var track = h('div', { class: 'rm-track' });
+    var track = h('div', { class: 'rm-track' + (wide ? ' rm-wide' : '') });
     track.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" class="rm-path"/></svg>';
     shown.forEach(function (nd, k) {
       var icon = nd.state === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16, 3)
-        : nd.state === 'locked' ? svg('<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 016 0v3"/>', 14, 2)
+        : nd.state === 'locked' ? (nd.n ? String(nd.n) : svg('<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 016 0v3"/>', 14, 2))
         : nd.state === 'finish' ? svg(I.flag, 16, 2.2) : nd.state === 'slot' ? null : svg(I.target, 16, 2.2);
-      var el = h('span', { class: 'rm-node ' + nd.state, style: 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%',
-        title: nd.title || '' }, icon);
+      var pos = 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%';
+      // вузол кроку відкриває його картку; фініш — картку самої цілі
+      var target = nd.id || (nd.state === 'finish' ? g.id : '');
+      var el = target ? h('button', { type: 'button', class: 'rm-node ' + nd.state, style: pos, title: nd.title || '',
+        'aria-label': (nd.n ? 'Крок ' + nd.n + ': ' : 'Фініш: ') + (nd.title || ''), onclick: function () { openDrawer(target); } }, icon)
+        : h('span', { class: 'rm-node ' + nd.state, style: pos, title: nd.title || '' }, icon);
       track.append(el);
+      // підпис: номер і назва; на вузькій картці лише номер у вузлі, підписи — у широкому розділі «Ціль»
+      if (wide && (nd.title || nd.state === 'finish')) {
+        track.append(h('span', { class: 'rm-label ' + nd.state, style: pos },
+          nd.state === 'finish' ? 'Фініш' : nd.n + ' · ' + nd.title));
+      }
       if (nd.state === 'now') {
         var me = h('span', { class: 'rm-me', style: 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%' });
         me.append(avatarEl('happy', 44));
@@ -2011,20 +2023,122 @@
     return st.length ? st.filter(function (x) { return x.done; }).length + '/' + st.length : '';
   }
 
-  /** Розділ «Ціль»: велика дорожня карта, усі кроки (і пройдені), зняти ціль. */
+  /* ---------- розділ «Ціль» ----------
+     Ліворуч — доріжка з підписаними кроками й список кроків. Праворуч — те, що за дослідженнями
+     найбільше тримає людину на шляху: навіщо (WOOP: бажання й результат), темп і прогноз фінішу
+     (видно, чи встигаєте), план «якщо… то…» на головну перешкоду (Gollwitzer, Oettingen)
+     і журнал перемог (принцип прогресу, Amabile). */
+
+  /** Перше число в назві кроку: «Lesson 10» → 10; без числа — null. */
+  function stepNum(t) { var m = /\d+/.exec(t.title); return m ? +m[0] : null; }
+  /** Кроки з номерами стоять не по зростанню (напр. імпорт дав 10, 9, 8)? */
+  function stepsUnordered(steps) {
+    var nums = steps.map(stepNum).filter(function (n) { return n !== null; });
+    return nums.some(function (n, i) { return i && n < nums[i - 1]; });
+  }
+  /** Номеровані кроки стають по зростанню на свої ж місця; кроки без номера лишаються де були. */
+  function orderByNumber(g) {
+    var steps = sorted(childrenOf(g.id), 'mine');
+    var was = steps.map(function (t) { return [t, t.order]; });
+    var numbered = steps.filter(function (t) { return stepNum(t) !== null; })
+      .sort(function (a, b) { return stepNum(a) - stepNum(b) || a.order - b.order; });
+    var k = 0;
+    steps.map(function (t) { return stepNum(t) !== null ? numbered[k++] : t; })
+      .forEach(function (t, i) { t.order = i + 1; });
+    commit();
+    toast('Кроки впорядковано за номером.', function () { was.forEach(function (w) { w[0].order = w[1]; }); commit(); }, 8000);
+  }
+
+  /** Темп: скільки кроків пройдено щотижня (8 тижнів), середнє за 4 і коли в такому темпі буде фініш. */
+  function goalPace(g, steps) {
+    var t0 = today(), mon = mondayOf(t0), weeks = [];
+    for (var i = 7; i >= 0; i--) weeks.push({ from: addDays(mon, -7 * i), n: 0 });
+    steps.forEach(function (s) {
+      if (!s.done || !s.doneAt) return;
+      weeks.forEach(function (w) { if (s.doneAt >= w.from && s.doneAt < addDays(w.from, 7)) w.n++; });
+    });
+    var last28 = steps.filter(function (s) { return s.done && s.doneAt && s.doneAt > addDays(t0, -28); }).length;
+    var perWeek = last28 / 4, left = steps.filter(function (s) { return !s.done; }).length;
+    var eta = perWeek > 0 && left ? addDays(t0, Math.ceil(left / perWeek * 7)) : '';
+    var daysToDue = g.due ? Math.round((parseDay(g.due) - parseDay(t0)) / 864e5) : null;
+    var need = daysToDue !== null && daysToDue > 0 && left ? Math.ceil(left / (daysToDue / 7) * 10) / 10 : null;
+    return { weeks: weeks, week: weeks[7].n, perWeek: perWeek, left: left, eta: eta, need: need,
+      late: !!(g.due && left && (!eta || eta > g.due)) };
+  }
+
+  var goalEdit = { name: '', text: '', pos: 0 };   // поле панелі, в якому пишуть: текст і фокус переживають перемальовування
+  function goalField(g, name, tag, ph) {
+    var el = h(tag, { name: name, placeholder: ph, autocomplete: 'off', 'aria-label': ph, rows: tag === 'textarea' ? 3 : null });
+    el.value = goalEdit.name === name ? goalEdit.text : g[name] || '';
+    el.addEventListener('focus', function () { goalEdit = { name: name, text: el.value, pos: el.value.length }; });
+    el.addEventListener('input', function () { goalEdit.text = el.value; goalEdit.pos = el.selectionStart; });
+    el.addEventListener('blur', function () {
+      if (!el.isConnected) return;                     // поле прибрало перемальовування — це не вихід з нього
+      if (goalEdit.name === name) goalEdit.name = '';
+      var v = el.value.trim();
+      if (v === (g[name] || '')) return;
+      g[name] = v;
+      setTimeout(commit);      // спершу хай фокус перейде в сусіднє поле, тоді перемальовуємо — і він там лишиться
+    });
+    if (goalEdit.name === name) setTimeout(function () { el.focus(); try { el.setSelectionRange(goalEdit.pos, goalEdit.pos); } catch (e) {} });
+    return el;
+  }
+  function dateUk(s) { return parseDay(s).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }); }
+
+  function goalSide(g, steps) {
+    var cards = [h('div', { class: 'gp-card' },
+      h('div', { class: 'gp-title' }, svg(I.star || I.target, 15), 'Навіщо'),
+      goalField(g, 'why', 'textarea', 'Що зміниться, коли дійдете? Напр.: зможу податися на junior DA'))];
+    if (steps.length) {
+      var p = goalPace(g, steps), max = Math.max.apply(null, p.weeks.map(function (w) { return w.n; }).concat(1));
+      cards.push(h('div', { class: 'gp-card gp-pace' },
+        h('div', { class: 'gp-title' }, svg(I.chart || I.target, 15), 'Темп і прогноз'),
+        h('div', { class: 'gp-nums' },
+          h('div', {}, h('b', {}, String(p.week)), h('small', {}, 'цього тижня')),
+          h('div', {}, h('b', {}, String(Math.round(p.perWeek * 10) / 10)), h('small', {}, 'кроків на тиждень')),
+          h('div', {}, h('b', {}, String(p.left)), h('small', {}, 'лишилось'))),
+        h('div', { class: 'gp-bars', 'aria-label': 'Кроки за останні 8 тижнів' }, p.weeks.map(function (w, i) {
+          return h('i', { class: i === 7 ? 'now' : '', style: 'height:' + Math.max(6, w.n / max * 100) + '%', title: w.n + ' з ' + dateUk(w.from) });
+        })),
+        h('div', { class: 'gp-eta' + (p.late ? ' late' : '') },
+          !p.left ? 'Усі кроки пройдено. Фініш!'
+            : p.eta ? 'Прогноз фінішу в цьому темпі: ' + dateUk(p.eta) + '.'
+            : 'Прогноз з’явиться, щойно пройдете перший крок.',
+          p.need !== null && p.late ? ' Щоб встигнути до ' + dateUk(g.due) + ', треба ' + p.need + ' ' + forms(Math.ceil(p.need), 'крок', 'кроки', 'кроків') + ' на тиждень.' : '',
+          p.need !== null && !p.late && p.left ? ' До дедлайну встигаєте.' : '')));
+    }
+    cards.push(h('div', { class: 'gp-card' },
+      h('div', { class: 'gp-title' }, svg(I.bolt || I.target, 15), 'Якщо… то…'),
+      h('small', { class: 'gp-hint' }, 'Що найімовірніше завадить і що ви тоді зробите. План наперед підвищує шанс дійти.'),
+      h('label', { class: 'gp-if' }, h('span', {}, 'Якщо'), goalField(g, 'obstacle', 'input', 'напр.: втомився після роботи')),
+      h('label', { class: 'gp-if' }, h('span', {}, 'то я'), goalField(g, 'ifThen', 'input', 'напр.: дивлюсь лише 10 хвилин уроку'))));
+    var wins = steps.filter(function (s) { return s.done; })
+      .sort(function (a, b) { return (b.doneAt || '').localeCompare(a.doneAt || '') || b.order - a.order; }).slice(0, 5);
+    if (wins.length) cards.push(h('div', { class: 'gp-card' },
+      h('div', { class: 'gp-title' }, svg(I.check, 15), 'Перемоги'),
+      h('ul', { class: 'gp-wins' }, wins.map(function (s) {
+        return h('li', {}, h('span', {}, s.title), s.doneAt ? h('small', {}, dueLabel(s.doneAt)) : null);
+      }))));
+    return h('aside', { class: 'goal-side' }, cards);
+  }
+
+  /** Розділ «Ціль»: велика дорожня карта, усі кроки (і пройдені), панель праворуч, зняти ціль. */
   function renderGoal(b) {
     var g = goalTask();
     var steps = g && !isHabit(g) ? sorted(childrenOf(g.id), 'mine') : [];
     var openS = steps.filter(function (x) { return !x.done; }), doneS = steps.filter(function (x) { return x.done; });
-    b.replaceChildren(installBar() || '', h('section', { class: 'flat goal-view' },
-      h('div', { class: 'group-row' }, h('h2', {}, 'Ціль'),
-        g ? h('button', { type: 'button', class: 'link-btn', onclick: function () { setGoal(g); } }, 'Зняти ціль') : null),
-      roadmap(),
+    var main = h('div', { class: 'goal-main' },
+      roadmap(true),
       g && !isHabit(g) ? h('div', { class: 'goal-steps' },
-        h('div', { class: 'group-label' }, 'Кроки · ' + doneS.length + '/' + steps.length),
+        h('div', { class: 'group-row' }, h('div', { class: 'group-label' }, 'Кроки · ' + doneS.length + '/' + steps.length),
+          stepsUnordered(steps) ? h('button', { type: 'button', class: 'link-btn', onclick: function () { orderByNumber(g); } }, 'Упорядкувати за номером') : null),
         openS.length ? openS.map(function (x) { return taskRow(x, { drag: !mobileMq.matches && !hoverMq.matches, lift: mobileMq.matches }); })
           : h('div', { class: 'empty' }, steps.length ? 'Усі кроки пройдено. Ціль досягнуто? Відмітьте її в картці.' : 'Кроків ще немає: додайте їх у картці вище.'),
-        doneS.length ? [h('div', { class: 'group-label win' }, 'Пройдено · ' + doneS.length), doneS.map(function (x) { return taskRow(x); })] : null) : null));
+        doneS.length ? [h('div', { class: 'group-label win' }, 'Пройдено · ' + doneS.length), doneS.map(function (x) { return taskRow(x); })] : null) : null);
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat wide goal-view' },
+      h('div', { class: 'group-row' }, h('h2', {}, 'Ціль'),
+        g ? h('button', { type: 'button', class: 'link-btn', onclick: function () { setGoal(g); } }, 'Зняти ціль') : null),
+      h('div', { class: 'goal-grid' }, main, g ? goalSide(g, steps) : null)));
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
