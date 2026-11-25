@@ -1853,7 +1853,11 @@
       var cur = steps.filter(function (s) { return !s.done; })[0];
       step = cur || null;
       nodes = steps.map(function (s) { return { state: s.done ? 'done' : s === cur ? 'now' : 'locked', title: s.title }; });
-      info = steps.length ? steps.filter(function (s) { return s.done; }).length + '/' + steps.length + ' кроків' : 'Розбийте ціль на 3–5 кроків';
+      // без кроків — порожні місця, щоб доріжку було видно одразу
+      if (!steps.length) nodes = [{ state: 'slot' }, { state: 'slot' }, { state: 'slot' }];
+      var doneN = steps.filter(function (s) { return s.done; }).length;
+      info = steps.length ? doneN + '/' + steps.length + ' ' + forms(steps.length, 'крок', 'кроки', 'кроків') + (doneN === steps.length ? ' · усі пройдено!' : '')
+        : 'Додайте 3–5 кроків нижче: вони стануть доріжкою до цілі.';
     }
     // у звички дата — наступний раз, а не дедлайн
     var left = g.due && !isH ? Math.round((parseDay(g.due) - parseDay(today())) / 864e5) : null;
@@ -1862,6 +1866,8 @@
     // вузли на хвилястій доріжці; довгу ціль показуємо вікном навколо поточного кроку
     var MAX = 6, nowI = Math.max(0, nodes.findIndex(function (n) { return n.state === 'now'; }));
     var from = Math.max(0, Math.min(nowI - 2, nodes.length - MAX)), shown = nodes.slice(from, from + MAX);
+    // фініш — прапорець наприкінці (у цілі-справи; у звички тиждень і є вся доріжка)
+    if (!isH && from + MAX >= nodes.length) shown = shown.concat({ state: 'finish', title: g.title });
     var W = 320, H = 96, n = shown.length || 1;
     var pts = shown.map(function (_, k) { var x = n === 1 ? W / 2 : 24 + k * (W - 48) / (n - 1); return [x, k % 2 ? 34 : 66]; });
     // плавна доріжка: від лівого краю через усі вузли до правого (кожна крива — 3 точки)
@@ -1873,9 +1879,11 @@
     var track = h('div', { class: 'rm-track' });
     track.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '" class="rm-path"/></svg>';
     shown.forEach(function (nd, k) {
+      var icon = nd.state === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16, 3)
+        : nd.state === 'locked' ? svg('<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 016 0v3"/>', 14, 2)
+        : nd.state === 'finish' ? svg(I.flag, 16, 2.2) : nd.state === 'slot' ? null : svg(I.target, 16, 2.2);
       var el = h('span', { class: 'rm-node ' + nd.state, style: 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%',
-        title: nd.title || '' }, nd.state === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 16, 3) : nd.state === 'locked'
-          ? svg('<rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 016 0v3"/>', 14, 2) : svg(I.target, 16, 2.2));
+        title: nd.title || '' }, icon);
       track.append(el);
       if (nd.state === 'now') {
         var me = h('span', { class: 'rm-me', style: 'left:' + (pts[k][0] / W * 100) + '%;top:' + (pts[k][1] / H * 100) + '%' });
@@ -1883,18 +1891,47 @@
         track.append(me);
       }
     });
+    // ще немає поточного кроку: персонаж на старті; усе пройдено — на фініші й радіє
+    if (!shown.some(function (nd) { return nd.state === 'now'; })) {
+      var fin = !isH && nodes.length && nodes.every(function (nd) { return nd.state === 'done'; });
+      var at = fin ? pts[pts.length - 1] : [8, 66];
+      var me2 = h('span', { class: 'rm-me', style: 'left:' + (at[0] / W * 100) + '%;top:' + (at[1] / H * 100) + '%' });
+      me2.append(avatarEl(fin ? 'cheer' : 'happy', 44));
+      track.append(me2);
+    }
     return h('section', { class: 'roadmap', 'aria-label': 'Ціль' },
       h('div', { class: 'rm-head' },
         h('span', { class: 'rm-kicker' }, svg(I.target, 14), 'Ціль'),
         dl ? h('span', { class: 'rm-deadline' + (left !== null && left <= 2 ? ' soon' : '') }, svg(I.cal, 14), dl) : null),
       h('button', { type: 'button', class: 'rm-title', onclick: function () { openDrawer(g.id); } }, g.title),
       h('div', { class: 'rm-info' }, info),
-      nodes.length ? track : null,
+      track,
       step ? h('div', { class: 'rm-step' },
         h('button', { type: 'button', class: 'check', 'aria-label': 'Крок зроблено', onclick: function (e) { burst(e.currentTarget); toggleDone(step); } }),
         h('span', {}, h('small', {}, 'Крок на сьогодні'), step.title),
         h('button', { type: 'button', class: 'btn primary', onclick: function () { startKick(step); } }, svg(I.play, 14), 'Почати')) : null,
-      !isH && !nodes.length ? firstStepBox(g) : null);
+      isH ? null : stepAdder(g));
+  }
+
+  /** Поле «Додати крок»: кроки цілі додаються один за одним, у кінець доріжки. */
+  var goalDraft = { text: '', focused: false };
+  function stepAdder(g) {
+    var input = h('input', { placeholder: childrenOf(g.id).length ? 'Наступний крок' : 'Напр.: пройти урок 1', autocomplete: 'off', enterkeyhint: 'done', 'aria-label': 'Новий крок цілі' });
+    input.value = goalDraft.text;
+    input.addEventListener('input', function () { goalDraft.text = input.value; });
+    input.addEventListener('focus', function () { goalDraft.focused = true; });
+    input.addEventListener('blur', function () { goalDraft.focused = false; });
+    function add() {
+      var v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      var max = 0;
+      childrenOf(g.id).forEach(function (c) { if (c.order > max) max = c.order; });
+      goalDraft = { text: '', focused: true };          // поле лишається під рукою для наступного кроку
+      addTask(g.listId, v, { parentId: g.id, order: max + 1, starred: false, due: '' });
+    }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    if (goalDraft.focused) setTimeout(function () { input.focus(); });
+    return h('div', { class: 'rm-add first-step-row' }, input, h('button', { type: 'button', class: 'btn', onclick: add }, svg(I.addTask, 16), 'Крок'));
   }
 
   /* ---------- «Зараз»: одна справа ---------- */

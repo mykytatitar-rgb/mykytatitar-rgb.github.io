@@ -911,3 +911,6 @@ body {
 .rm-cands { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .2rem; }
 .rm-cands small { flex-basis: 100%; color: var(--muted); }
 .rm-cands .schip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-node.slot { border-style: dashed; background: transparent; }
+.rm-node.finish { background: var(--surface-2); color: var(--accent); border-color: var(--accent); }
+.rm-add .btn { display: inline-flex; align-items: center; gap: .3rem; }

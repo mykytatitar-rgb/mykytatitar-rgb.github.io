@@ -51,6 +51,19 @@ const errs = [];
     const sp = [...rows.values()].find(r => r.data.title === 'Learn Spanish');
     assert(sp && sp.data.goal === true, 'нову ціль створено з поля');
     assert(await D.locator('.roadmap:not(.rm-empty)').count() === 1 && /Learn Spanish/.test(await D.locator('.roadmap').textContent()), 'одразу її карта: «розбийте на кроки»');
+    // ціль без кроків: доріжка однаково видна — персонаж на старті, порожні місця, прапорець на фініші
+    const rm0 = D.locator('.roadmap:not(.rm-empty)');
+    assert(await rm0.locator('.rm-track').count() === 1, 'доріжка є навіть без кроків');
+    assert(await rm0.locator('.rm-me svg.avatar').count() === 1 && await rm0.locator('.rm-node.finish').count() === 1, 'персонаж і фініш');
+    assert(await rm0.locator('.rm-node.slot').count() >= 3, 'порожні місця для кроків');
+    assert(!/перша дія на 2 хвилини/i.test(await rm0.textContent()), 'без чужого питання про «першу дію»');
+    const add = rm0.locator('.rm-add input');
+    await add.fill('Lesson A'); await add.press('Enter'); await sleep(300);
+    await D.locator('.roadmap .rm-add input').fill('Lesson B'); await D.locator('.roadmap .rm-add input').press('Enter'); await sleep(1600);
+    const kids = [...rows.values()].filter(r => r.data.parentId === sp.data.id).map(r => r.data.title);
+    assert(kids.join() === 'Lesson A,Lesson B', 'два кроки додано по черзі, у порядку: ' + kids);
+    assert(await D.locator('.roadmap .rm-node.now').count() === 1 && await D.locator('.roadmap .rm-node.locked').count() === 1, 'на доріжці: поточний і наступний');
+    assert(/Lesson A/.test(await D.locator('.roadmap .rm-step').textContent()), 'крок на сьогодні — перший доданий');
     // «Пізніше» ховає запрошення до завтра — перевіримо на іншій цілі нижче
     // зробити ціллю
     await D.click('#views .nav-item:has-text("Усі списки")'); await sleep(300);
