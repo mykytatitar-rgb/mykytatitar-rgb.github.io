@@ -4,7 +4,7 @@ const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const path = require('path');
 const PORT = 8800, SITE = `http://localhost:${PORT}`;
-const SB = 'https://kcxqienzhopnsqmykhqv.supabase.co';
+const SB = 'https://erhtylomzzqojqarilje.supabase.co';
 const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 const day = n => iso(new Date(Date.now() + n * 864e5));
 const T0 = day(0);

@@ -1,9 +1,8 @@
 /* Справи — особистий список задач. Окремий сайт і окремий застосунок:
    ставиться на телефон і комп'ютер власною іконкою.
 
-   Дані — у базі Supabase, таблиця records, види todo_task і todo_list
-   (та сама база, що в «Вектора»; його записи й ці одне одному не
-   заважають — кожен застосунок читає лише свої види). Кожне завдання —
+   Дані — у власному проєкті Supabase (організація Spravy), таблиця records,
+   види todo_task і todo_list. Кожне завдання —
    окремий рядок: правка на телефоні не перетирає іншої правки на
    комп'ютері.
 
@@ -3512,12 +3511,75 @@
   /* ============================================================
      Старт
      ============================================================ */
+  /* ---------- переїзд на інший сервер і новий пароль ----------
+     «Справи» мають власний проєкт Supabase. Пристрій, що працював зі старим
+     сервером, лишає собі справи й чергу, але ключі входу старого сервера тут
+     не дійсні: просимо увійти ще раз і перечитуємо все з нуля. */
+  var BASE_KEY = 'spravy.base';
+  function serverMoved() {
+    if (lsGet(BASE_KEY) === BASE) return false;
+    lsSet(BASE_KEY, BASE);
+    since = null; lsDel(SINCE_KEY);
+    if (!signedIn()) return false;
+    setSess(null);
+    return true;
+  }
+
+  function recover() {
+    var email = $('lgEmail').value.trim();
+    if (!email) { showLogin('Впишіть пошту, і ми надішлемо лист, щоб задати новий пароль.'); return; }
+    fetch(BASE + '/auth/v1/recover?redirect_to=' + encodeURIComponent(location.origin + location.pathname), {
+      method: 'POST', headers: { apikey: cfg.anonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email })
+    }).then(function (res) {
+      showLogin(res.ok ? 'Лист надіслано на ' + email + '. Відкрийте посилання з нього, і задасте новий пароль.'
+        : res.status === 429 ? 'Листів забагато за короткий час. Спробуйте за годину.' : 'Не вдалося надіслати лист. Спробуйте трохи згодом.');
+    }, function () { showLogin('Немає зв\'язку з сервером. Перевірте інтернет'); });
+  }
+  $('lgForgot').addEventListener('click', recover);
+
+  /** Посилання з листа: #access_token=…&type=recovery — форма нового пароля. */
+  function takeRecovery() {
+    var p = new URLSearchParams(location.hash.replace(/^#/, ''));
+    if (p.get('type') !== 'recovery' || !p.get('access_token')) return false;
+    var at = p.get('access_token'), rt = p.get('refresh_token') || '';
+    history.replaceState(null, '', location.pathname + location.search);
+    var input = h('input', { id: 'newPass', type: 'password', autocomplete: 'new-password', minlength: '6', required: true });
+    var err = h('p', { class: 'login-err', role: 'alert', hidden: true });
+    var btn = h('button', { class: 'btn primary', type: 'submit' }, 'Зберегти пароль');
+    var form = h('form', { class: 'login-card', novalidate: true },
+      h('h1', { class: 'login-title' }, 'Новий пароль'),
+      h('p', { class: 'login-hint' }, 'Придумайте новий пароль для «Справ» (від 6 символів).'),
+      h('div', { class: 'field' }, h('label', { for: 'newPass' }, 'Пароль'), input), err, btn);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (input.value.length < 6) { err.hidden = false; err.textContent = 'Щонайменше 6 символів'; return; }
+      btn.disabled = true;
+      fetch(BASE + '/auth/v1/user', { method: 'PUT', headers: { apikey: cfg.anonKey, Authorization: 'Bearer ' + at, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: input.value }) }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (j) {
+          if (!res.ok) throw new Error(j.msg || j.message || 'Посилання застаріло. Надішліть лист ще раз.');
+          setSess({ access_token: at, refresh_token: rt, email: j.email || lsGet(OWNER_KEY) || '', uid: j.id || '' });
+          $('loginForm').hidden = false; form.remove();
+          claimLocal(); showApp(); sync();
+          toast('Пароль змінено.');
+        });
+      }).catch(function (e2) { err.hidden = false; err.textContent = e2.message; btn.disabled = false; });
+    });
+    $('app').hidden = true;
+    $('login').hidden = false;
+    $('loginForm').hidden = true;
+    $('login').append(form);
+    setTimeout(function () { input.focus(); });
+    return true;
+  }
 
   loadLocal();
+  var moved = serverMoved();
   checkUpdate();     // запам'ятати, яка версія коду зараз на сайті
   takeImportFromUrl().then(function () {
     if (!BASE) { setSync('error', 'Не налаштовано адресу бази'); }
-    if (!signedIn()) { showLogin(''); return; }
+    if (takeRecovery()) return;
+    if (!signedIn()) { showLogin(moved ? 'Справи переїхали на власний сервер. Увійдіть ще раз тим самим паролем: нічого не загубилось.' : ''); return; }
     claimLocal();
     showApp();
     sync();

@@ -19,7 +19,7 @@
 <meta name="apple-mobile-web-app-title" content="Справи">
 <meta name="format-detection" content="telephone=no">
 <!-- Виконується лише код цього сайту, а звʼязок — тільки з базою -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://kcxqienzhopnsqmykhqv.supabase.co https://api.mymemory.translated.net https://api.languagetool.org; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://erhtylomzzqojqarilje.supabase.co https://api.mymemory.translated.net https://api.languagetool.org; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 </head>
 <body>
 
@@ -28,7 +28,7 @@
   <form class="login-card" id="loginForm" novalidate>
     <div class="brand"><span class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Справи</div>
     <h1 class="login-title">Вхід</h1>
-    <p class="login-hint">Пошта й пароль ті самі, що у «Векторі». Увійти треба один раз на кожному пристрої, далі справи синхронізуються самі.</p>
+    <p class="login-hint">Увійти треба один раз на кожному пристрої, далі справи синхронізуються самі.</p>
     <div class="field">
       <label for="lgEmail">Пошта</label>
       <input id="lgEmail" type="email" autocomplete="username" required>
@@ -39,7 +39,7 @@
     </div>
     <p class="login-err" id="lgErr" role="alert" hidden></p>
     <button class="btn primary" id="lgBtn" type="submit">Увійти</button>
-    <p class="login-hint">Не пам'ятаєте пароль? Задайте новий у «Векторі»: Налаштування → картка «Акаунт» → «Змінити пароль». Старий знати не треба, а пошта для входу написана там само.</p>
+    <button class="link-btn" id="lgForgot" type="button">Забули пароль? Надіслати лист</button>
   </form>
 </div>
 

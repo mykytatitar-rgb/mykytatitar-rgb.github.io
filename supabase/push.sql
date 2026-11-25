@@ -95,7 +95,7 @@ grant execute on function public.push_targets(uuid), public.push_tasks(uuid), pu
 select cron.unschedule('spravy-nudge') where exists (select 1 from cron.job where jobname = 'spravy-nudge');
 select cron.schedule('spravy-nudge', '*/5 * * * *', $cron$
   select net.http_post(
-    url := 'https://kcxqienzhopnsqmykhqv.supabase.co/functions/v1/nudge',
+    url := 'https://erhtylomzzqojqarilje.supabase.co/functions/v1/nudge',
     headers := jsonb_build_object('Content-Type', 'application/json', 'x-cron-key', (select v from private.push_cfg where k = 'cron_key')),
     body := '{}'::jsonb);
 $cron$);
