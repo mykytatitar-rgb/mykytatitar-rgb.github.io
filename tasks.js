@@ -2292,7 +2292,7 @@
       if (!p || !lab) return;
       var kind = lab.classList.contains('now') ? 'now' : lab.classList.contains('done') ? 'done' : 'locked';
       var px = parseFloat(getComputedStyle(lab).fontSize) * p.k, want = LABEL_PX[kind] / px;
-      var ls = (kind === 'done' ? Math.max(0.7, Math.min(1, want)) : +el.getAttribute('data-ahead') > LABEL_AHEAD ? 1 : Math.max(1, Math.min(1.8, want))).toFixed(2);
+      var ls = (kind === 'done' ? Math.max(0.7, Math.min(1, want)) : +el.getAttribute('data-ahead') > LABEL_AHEAD ? 1 : Math.max(1, Math.min(1.5, want))).toFixed(2);
       // масштабуємо всю позначку (номер і підпис) рівномірно в 3D навколо майданчика: окремий масштаб підпису
       // зробив би його окремим шаром, і компоновщик клав би його на землю
       el.style.scale = ls + ' ' + ls + ' ' + ls;
@@ -2445,10 +2445,10 @@
       var n = e.target.closest && e.target.closest('[data-step]');
       if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(+n.getAttribute('data-step') - 1); }
     });
-    // урвище: острів висить у небі
+    // урвище: острів висить у небі; схили йдуть навскіс назовні й донизу, тож товщину видно згори
     ground.append(h('div', { class: 'w-edge front', style: 'top:' + L.H + 'px;width:' + L.GW + 'px' }),
-      h('div', { class: 'w-edge side', style: 'height:' + L.H + 'px' }),
-      h('div', { class: 'w-edge side', style: 'left:' + L.GW + 'px;height:' + L.H + 'px' }));
+      h('div', { class: 'w-edge side l', style: 'height:' + (L.H + 120) + 'px' }),
+      h('div', { class: 'w-edge side r', style: 'left:' + L.GW + 'px;height:' + (L.H + 120) + 'px' }));
     if (L.river) ground.insertAdjacentHTML('beforeend', W.waterSvg(L.river, 0) + W.waterSvg(L.river, 1));
     // туман над тим, що далі ніж на два кроки попереду; замок видно завжди
     var fogY = nowI < 0 ? 0 : P[Math.min(N + 1, nowI + 3)][1];

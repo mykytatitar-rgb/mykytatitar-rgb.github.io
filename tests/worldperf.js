@@ -24,7 +24,11 @@ const VARIANTS = {
   'no-ground-anim': '.wr-shine,.w-water{animation:none!important}',
   'no-pulse': '.w-node.now{animation:none!important}',
   'ground-only': '.w-bb,.w-cloud,.w-node,.w-sky>*{display:none!important}',
-  'no-svg-anim': '.world .smoke circle,.world .f1,.world .f2,.world .fg{animation:none!important}'
+  'no-svg-anim': '.world .smoke circle,.world .f1,.world .f2,.world .fg{animation:none!important}',
+  'no-haze': '.w-haze{display:none!important}',
+  'no-vig': '.w-vig{display:none!important}',
+  'no-edges': '.w-edge{display:none!important}',
+  'no-clip': '.w-edge{clip-path:none!important}'
 };
 
 const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');

@@ -122,6 +122,38 @@ const inView = b => !!b && b.x + b.width > 0 && b.x < VW && b.y + b.height > 0 &
     assert(ahead.length === 3 && ahead.every(x => x.seen && x.px >= 13), 'підписи поточного й двох наступних ≥ 13 px: ' + ahead.map(x => x.px.toFixed(1)).join(', '));
     const doneMax = Math.max(...sizes.filter(x => x.done && x.seen).map(x => x.px));
     assert(sizes[ni].px > doneMax, 'поточний підпис помітніший за пройдені: ' + sizes[ni].px.toFixed(1) + ' > ' + doneMax.toFixed(1));
+    // глибина й світло: урвище острова видно збоку, а рослини освітлені з боку сонця (праворуч)
+    const light = await D.evaluate(async b64 => {
+      const W = window.SpravyWorld;
+      const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const cx = c.getContext('2d'); cx.drawImage(img, 0, 0);
+      const px = (x, y) => { const d = cx.getImageData(Math.round(x), Math.round(y), 1, 1).data; return [d[0], d[1], d[2]]; };
+      const lum = p => 0.3 * p[0] + 0.59 * p[1] + 0.11 * p[2];
+      const m = new DOMMatrix(getComputedStyle(document.querySelector('.w-ground')).transform);
+      const z = parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('.w-tilt').style.transform)[1]);
+      const cam = { x: -m.m41, y: -m.m42, z }, view = { w: innerWidth, h: innerHeight }, L = W.layout(13);
+      const edge = W.project(cam, view, L.GW, cam.y - 200);
+      const cliff = px(edge.x + 8, edge.y + 4);
+      const ui = [...document.querySelectorAll('.w-bar, .w-mini, .w-ctrl, .w-pop, .w-over .w-bb')].map(e => e.getBoundingClientRect());
+      // прямокутники всіх рослин на екрані: точку проби може закрити ближча (з більшим y) рослина
+      const SIZE = { pine: [70, 124], round: [90, 120], birch: [70, 132], bush: [76, 48], rock: [64, 44], mushroom: [30, 30], reed: [34, 64], mountain: [380, 300] };
+      const boxes = L.decor.map(d => { const p = W.project(cam, view, d.x, d.y); if (!p) return null; const sz = SIZE[d.t];
+        return { y: d.y, l: p.x - sz[0] * d.s * p.k / 2, r: p.x + sz[0] * d.s * p.k / 2, t: p.y - sz[1] * d.s * p.k, b: p.y }; });
+      const hidden = (x, y, dy) => boxes.some(q => q && q.y > dy && x > q.l && x < q.r && y > q.t && y < q.b);
+      let lit = 0, n = 0;
+      L.decor.filter(d => d.t === 'pine').forEach(d => {
+        const p = W.project(cam, view, d.x, d.y); if (!p) return;
+        const w = 70 * d.s * p.k, h = 124 * d.s * p.k, y = p.y - h * 0.3, xl = p.x - w * 0.16, xr = p.x + w * 0.16;
+        if (y < innerHeight * 0.3 || y > innerHeight - 4 || p.x - w / 2 < 4 || p.x + w / 2 > innerWidth - 4 || w < 20) return;
+        if (ui.some(u => p.x + w / 2 > u.left && p.x - w / 2 < u.right && y > u.top && y < u.bottom)) return;
+        if (hidden(xl, y, d.y) || hidden(xr, y, d.y)) return;
+        n++; if (lum(px(xr, y)) > lum(px(xl, y)) + 4) lit++;
+      });
+      return { cliff, lit, n };
+    }, (await D.screenshot()).toString('base64'));
+    assert(light.cliff[0] > light.cliff[2] + 15, 'за правим краєм острова видно урвище, а не небо: rgb ' + light.cliff);
+    assert(light.n >= 5 && light.lit >= light.n * 0.8, 'ялинки освітлені праворуч, з боку сонця: ' + light.lit + ' з ' + light.n);
     // піни й підписи теж клікаються
     await w.locator('.w-pin[data-step="9"]').click(); await sleep(300);
     assert(/Крок 9 з 13/.test(await w.locator('.w-pop').textContent().catch(() => '')), 'клік по номеру кроку відкриває його');

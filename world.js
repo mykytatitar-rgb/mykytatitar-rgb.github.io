@@ -267,6 +267,8 @@
     o.push('<svg class="w-roads" width="' + GW + '" height="' + L.H + '" viewBox="0 0 ' + GW + ' ' + L.H + '" aria-hidden="true"><defs>' +
       '<radialGradient id="wsh"><stop offset="0" stop-color="#000" stop-opacity=".36"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>' +
       '<radialGradient id="wglow"><stop offset="0" class="wg0"/><stop offset="1" class="wg1"/></radialGradient>' +
+      '<radialGradient id="wlight"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="wdark"><stop offset="0" stop-color="#0b2a10" stop-opacity=".14"/><stop offset="1" stop-color="#0b2a10" stop-opacity="0"/></radialGradient>' +
       '<radialGradient id="wnd-done" cx=".4" cy=".35"><stop offset="0" stop-color="#70e2a9"/><stop offset="1" stop-color="#34b077"/></radialGradient>' +
       '<radialGradient id="wnd-locked" cx=".4" cy=".35"><stop offset="0" stop-color="#f1f2f7"/><stop offset="1" stop-color="#c6cad8"/></radialGradient>' +
       '<pattern id="wtex" width="150" height="150" patternUnits="userSpaceOnUse">');
@@ -286,17 +288,25 @@
     L.zones.forEach(function (z) {
       o.push('<rect class="w-zone" x="0" y="' + r1(z.y0) + '" width="' + GW + '" height="' + r1(z.y1 - z.y0) + '" fill="url(#wz' + z.i + ')"/>');
     });
+    // рельєф: м'які світлі й темні плями — горбки й западини; у «Пагорбах» виразніші
+    for (var rr = 0; rr < Math.ceil(L.H / 220); rr++) {
+      var ry0 = rnd(rr * 3.7) * L.H, zone = zoneAtY(L, ry0), k = zone.key === 'hills' ? 1.8 : zone.key === 'peaks' ? 1.4 : 1;
+      o.push('<ellipse cx="' + r1(rnd(rr * 5.3) * GW) + '" cy="' + r1(ry0) + '" rx="' + r1((220 + rnd(rr * 7.1) * 220) * k) + '" ry="' + r1((120 + rnd(rr * 2.9) * 140) * k) +
+        '" fill="url(#' + (rr % 2 ? 'wdark' : 'wlight') + ')"/>');
+    }
     o.push('<rect width="' + GW + '" height="' + L.H + '" fill="url(#wtex)"/>');
     L.lakes.forEach(function (l) {
       o.push('<ellipse class="lk-bank" cx="' + l.x + '" cy="' + l.y + '" rx="' + r1(l.rx + 14) + '" ry="' + r1(l.ry + 11) + '"/>' +
         '<ellipse class="lk-water" cx="' + l.x + '" cy="' + l.y + '" rx="' + l.rx + '" ry="' + l.ry + '"/>' +
         '<ellipse class="lk-deep" cx="' + l.x + '" cy="' + r1(l.y + 10) + '" rx="' + r1(l.rx * 0.6) + '" ry="' + r1(l.ry * 0.52) + '"/>' +
+        '<ellipse class="lk-sky" cx="' + l.x + '" cy="' + r1(l.y - l.ry * 0.32) + '" rx="' + r1(l.rx * 0.78) + '" ry="' + r1(l.ry * 0.42) + '"/>' +
         '<path class="lk-shine" d="M' + r1(l.x - l.rx * 0.45) + ' ' + r1(l.y - l.ry * 0.3) + ' q' + r1(l.rx * 0.3) + ' -14 ' + r1(l.rx * 0.6) + ' 0"/>');
     });
     if (L.river) {
       var d = riverPath(L.river, 0);
       // відблиски — окремими шарами над землею (waterSvg): анімація всередині землі перемальовувала б її щокадру
-      o.push('<path class="wr-bank" d="' + d + '"/><path class="wr-water" d="' + d + '"/><path class="wr-deep" d="' + d + '"/>');
+      o.push('<path class="wr-bank" d="' + d + '"/><path class="wr-water" d="' + d + '"/><path class="wr-deep" d="' + d + '"/>' +
+        '<path class="wr-sky" d="' + riverPath(L.river, 26) + '"/>');
     }
     // квіти: по одному шляху на колір (сотні кіл — це сотні вузлів)
     var fl = ['', '', '', ''];
@@ -352,25 +362,25 @@
   var ART = {
     pine: function (v, snow) {
       var b = '<rect class="tk" x="31" y="98" width="8" height="26" rx="2"/>' +
-        '<polygon class="pn1" points="35,46 2,104 35,104"/><polygon class="pn2" points="35,46 68,104 35,104"/>' +
-        '<polygon class="pn1" points="35,22 7,78 35,78"/><polygon class="pn2" points="35,22 63,78 35,78"/>' +
-        '<polygon class="pn1" points="35,2 12,50 35,50"/><polygon class="pn2" points="35,2 58,50 35,50"/>';
+        '<polygon class="pn2" points="35,46 2,104 35,104"/><polygon class="pn1" points="35,46 68,104 35,104"/>' +
+        '<polygon class="pn2" points="35,22 7,78 35,78"/><polygon class="pn1" points="35,22 63,78 35,78"/>' +
+        '<polygon class="pn2" points="35,2 12,50 35,50"/><polygon class="pn1" points="35,2 58,50 35,50"/>';
       if (snow) b += '<polygon class="snow" points="35,2 24,24 30,21 35,27 40,21 46,24"/><polygon class="snow" points="35,24 20,50 28,46 35,52 42,46 50,50"/>';
       return [70, 124, b];
     },
     round: function (v) {
       var b = '<path class="tk" d="M40 72 L37 120 L53 120 L50 72 Z"/><path class="tk" d="M46 96 L60 82 L62 86 L49 100 Z"/>' +
-        '<circle class="lf2" cx="47" cy="52" r="34"/><circle class="lf1" cx="38" cy="46" r="28"/><circle class="lf1" cx="59" cy="36" r="20"/>' +
-        '<circle class="lf3" cx="31" cy="35" r="11"/>';
+        '<circle class="lf2" cx="43" cy="52" r="34"/><circle class="lf1" cx="52" cy="46" r="28"/><circle class="lf1" cx="31" cy="36" r="20"/>' +
+        '<circle class="lf3" cx="61" cy="35" r="11"/>';
       if (v === 1) b += '<circle class="ap" cx="58" cy="52" r="4"/><circle class="ap" cx="36" cy="62" r="4"/><circle class="ap" cx="66" cy="34" r="3.5"/>';
       return [90, 120, b];
     },
     birch: function () {
       return [70, 132, '<rect class="bk" x="31" y="40" width="8" height="92" rx="3"/><path class="bm" d="M31 62h4M35 80h4M31 98h5M34 114h5"/>' +
-        '<ellipse class="lb2" cx="36" cy="44" rx="28" ry="38"/><ellipse class="lb1" cx="31" cy="37" rx="20" ry="28"/><ellipse class="lf3" cx="27" cy="28" rx="8" ry="11"/>'];
+        '<ellipse class="lb2" cx="34" cy="44" rx="28" ry="38"/><ellipse class="lb1" cx="39" cy="37" rx="20" ry="28"/><ellipse class="lf3" cx="45" cy="28" rx="8" ry="11"/>'];
     },
     bush: function (v) {
-      var b = '<circle class="lf2" cx="24" cy="32" r="16"/><circle class="lf2" cx="54" cy="33" r="15"/><circle class="lf1" cx="38" cy="24" r="20"/><circle class="lf3" cx="31" cy="17" r="7"/>';
+      var b = '<circle class="lf2" cx="24" cy="32" r="16"/><circle class="lf2" cx="54" cy="33" r="15"/><circle class="lf1" cx="40" cy="24" r="20"/><circle class="lf3" cx="47" cy="17" r="7"/>';
       if (v === 1) b += '<circle class="bry" cx="22" cy="30" r="3"/><circle class="bry" cx="47" cy="22" r="3"/><circle class="bry" cx="56" cy="34" r="3"/>';
       return [76, 48, b];
     },
@@ -389,14 +399,14 @@
     },
     mountain: function (v) {
       return [380, 300, '<polygon class="mt3" points="' + (v ? '20,300 90,130 170,300' : '210,300 290,120 380,300') + '"/>' +
-        '<polygon class="mt1" points="10,300 180,18 180,300"/><polygon class="mt2" points="180,18 350,300 180,300"/>' +
+        '<polygon class="mt2" points="10,300 180,18 180,300"/><polygon class="mt1" points="180,18 350,300 180,300"/>' +
         '<polygon class="snow" points="180,18 134,94 152,86 166,106 180,88 196,104 212,84 226,94"/>'];
     },
     house: function () {
       return [160, 170, '<g class="smoke"><circle cx="110" cy="30" r="7"/><circle cx="116" cy="16" r="9"/><circle cx="108" cy="0" r="11"/></g>' +
         '<rect class="hc" x="100" y="44" width="15" height="34" rx="2"/>' +
-        '<rect class="hw" x="24" y="86" width="112" height="82"/><rect class="hw2" x="80" y="86" width="56" height="82"/>' +
-        '<polygon class="hr" points="10,92 80,34 150,92"/><polygon class="hr2" points="80,34 150,92 80,92"/>' +
+        '<rect class="hw" x="24" y="86" width="112" height="82"/><rect class="hw2" x="24" y="86" width="56" height="82"/>' +
+        '<polygon class="hr" points="10,92 80,34 150,92"/><polygon class="hr2" points="80,34 10,92 80,92"/>' +
         '<rect class="hd" x="69" y="118" width="22" height="50" rx="4"/><circle class="hk" cx="86" cy="145" r="2"/>' +
         '<rect class="hwin" x="36" y="104" width="22" height="20" rx="2"/><rect class="hwin" x="102" y="104" width="22" height="20" rx="2"/>' +
         '<path class="hwf" d="M47 104v20M36 114h22M113 104v20M102 114h22"/>'];
@@ -410,13 +420,13 @@
     castle: function () {
       var b = '<rect class="cs1" x="40" y="128" width="220" height="152"/>';
       for (var i = 0; i < 11; i++) b += '<rect class="cs1" x="' + (42 + i * 20) + '" y="114" width="12" height="16"/>';
-      b += '<rect class="csh" x="150" y="114" width="110" height="166"/>' +
-        '<rect class="cs2" x="10" y="84" width="62" height="196"/><rect class="csh" x="41" y="84" width="31" height="196"/>' +
-        '<rect class="cs2" x="228" y="84" width="62" height="196"/><rect class="csh" x="259" y="84" width="31" height="196"/>' +
-        '<rect class="cs2" x="108" y="60" width="84" height="220"/><rect class="csh" x="150" y="60" width="42" height="220"/>' +
-        '<polygon class="cr" points="2,88 41,24 80,88"/><polygon class="cr2" points="41,24 80,88 41,88"/>' +
-        '<polygon class="cr" points="220,88 259,24 298,88"/><polygon class="cr2" points="259,24 298,88 259,88"/>' +
-        '<polygon class="cr" points="98,64 150,0 202,64"/><polygon class="cr2" points="150,0 202,64 150,64"/>' +
+      b += '<rect class="csh" x="40" y="114" width="110" height="166"/>' +
+        '<rect class="cs2" x="10" y="84" width="62" height="196"/><rect class="csh" x="10" y="84" width="31" height="196"/>' +
+        '<rect class="cs2" x="228" y="84" width="62" height="196"/><rect class="csh" x="228" y="84" width="31" height="196"/>' +
+        '<rect class="cs2" x="108" y="60" width="84" height="220"/><rect class="csh" x="108" y="60" width="42" height="220"/>' +
+        '<polygon class="cr" points="2,88 41,24 80,88"/><polygon class="cr2" points="41,24 2,88 41,88"/>' +
+        '<polygon class="cr" points="220,88 259,24 298,88"/><polygon class="cr2" points="259,24 220,88 259,88"/>' +
+        '<polygon class="cr" points="98,64 150,0 202,64"/><polygon class="cr2" points="150,0 98,64 150,64"/>' +
         '<path class="fp" d="M150 0V-36M41 24V-6M259 24V-6"/>' +
         '<path class="fg" d="M150 -36L188 -27L150 -17Z"/><path class="fg" d="M41 -6L66 0L41 7Z"/><path class="fg" d="M259 -6L284 0L259 7Z"/>' +
         '<path class="cg" d="M124 280V238a26 26 0 0 1 52 0V280Z"/><path class="cgl" d="M134 230V280M150 214V280M166 230V280M124 254H176"/>' +
@@ -435,7 +445,7 @@
     cloud: function () {
       return [240, 120, '<ellipse class="cl2" cx="120" cy="94" rx="112" ry="24"/>' +
         '<circle class="cl1" cx="70" cy="74" r="40"/><circle class="cl1" cx="122" cy="58" r="52"/><circle class="cl1" cx="174" cy="74" r="38"/>' +
-        '<circle class="cl1" cx="98" cy="86" r="32"/><circle class="cl1" cx="148" cy="88" r="30"/><circle class="cl3" cx="108" cy="44" r="22"/>'];
+        '<circle class="cl1" cx="98" cy="86" r="32"/><circle class="cl1" cx="148" cy="88" r="30"/><circle class="cl3" cx="138" cy="44" r="22"/>'];
     }
   };
   /** Кольори малюнків, що ставляться через <use>: стилі документа до їхніх копій не доходять, а змінні — успадковуються. */

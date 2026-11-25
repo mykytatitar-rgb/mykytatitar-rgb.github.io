@@ -1052,7 +1052,10 @@ body {
   animation: w-drift 210s linear infinite; }
 @keyframes w-drift { from { transform: translateX(-320px); } to { transform: translateX(110vw); } }
 .world[data-sky=night] .w-cloud2d { opacity: .3; }
-.w-vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 55%, transparent 60%, rgba(8, 14, 40, .3) 100%); }
+/* один повноекранний шар над сценою: віньєтка й повітряна перспектива (далеке тоне в кольорі неба) */
+.w-vig { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 75% 70% at 50% 55%, transparent 60%, rgba(8, 14, 40, .3) 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--sky-b) 62%, transparent) 0%, color-mix(in srgb, var(--sky-b) 22%, transparent) 18%, transparent 40%); }
 
 /* сцена: камера, острів, урвище, туман */
 .w-stage { position: absolute; inset: 0; cursor: grab; }
@@ -1064,11 +1067,18 @@ body {
 button.w-node { pointer-events: auto; }
 .w-roads { position: absolute; left: 0; top: 0; pointer-events: none; }
 .w-edge { position: absolute; left: 0; pointer-events: none; }
-.w-edge.front { height: 190px; transform-origin: 50% 0; transform: rotateX(-90deg);
-  background: repeating-linear-gradient(180deg, transparent 0 26px, rgba(0, 0, 0, .1) 26px 30px), linear-gradient(180deg, var(--grass) 0 9px, var(--cliff1) 9px, var(--cliff2) 52%, var(--cliff3));
-  clip-path: polygon(0 0, 100% 0, 100% 58%, 94% 72%, 88% 64%, 80% 86%, 71% 70%, 62% 94%, 53% 76%, 45% 100%, 36% 78%, 27% 92%, 18% 70%, 9% 84%, 0 62%); }
-.w-edge.side { top: 0; width: 190px; transform-origin: 0 50%; transform: rotateY(90deg);
-  background: linear-gradient(90deg, var(--grass) 0 9px, var(--cliff1) 9px, var(--cliff2) 52%, var(--cliff3)); }
+/* схили острова — навскіс назовні й донизу (60°): згори видно товщину; праворуч, з боку сонця, світліше.
+   Низ схилу розчиняється в повітрі градієнтом, а не маскою: clip-path над такою площею коштував ~25 мс на кадр */
+.w-edge.front { height: 190px; transform-origin: 50% 0; transform: rotateX(-60deg);
+  background: repeating-linear-gradient(180deg, transparent 0 26px, rgba(0, 0, 0, .1) 26px 30px),
+    linear-gradient(180deg, var(--grass) 0 9px, var(--cliff1) 9px, var(--cliff2) 45%, color-mix(in srgb, var(--cliff3) 70%, transparent) 75%, transparent); }
+.w-edge.side { top: 0; width: 190px; }
+.w-edge.side.l { left: -190px; transform-origin: 100% 50%; transform: rotateY(-60deg);
+  background: repeating-linear-gradient(270deg, transparent 0 26px, rgba(0, 0, 0, .12) 26px 30px),
+    linear-gradient(270deg, var(--grass) 0 9px, var(--cliff2) 9px, color-mix(in srgb, var(--cliff3) 75%, transparent) 70%, transparent); }
+.w-edge.side.r { transform-origin: 0 50%; transform: rotateY(60deg);
+  background: repeating-linear-gradient(90deg, transparent 0 26px, rgba(0, 0, 0, .08) 26px 30px),
+    linear-gradient(90deg, var(--grass) 0 9px, var(--cliff1) 9px, var(--cliff2) 50%, color-mix(in srgb, var(--cliff3) 75%, transparent) 75%, transparent); }
 .w-fog { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; background: linear-gradient(180deg, var(--fog) 0%, var(--fog) 72%, transparent 100%); }
 .fogged { opacity: .45; }
 .w-label.fogged { opacity: .72; }
@@ -1099,6 +1109,9 @@ button.w-node { pointer-events: auto; }
 .world .lk-water { fill: var(--water1); }
 .world .lk-deep { fill: var(--water2); opacity: .45; }
 .world .lk-shine { fill: none; stroke: rgba(255, 255, 255, .7); stroke-width: 4; stroke-linecap: round; }
+/* у воді відбивається небо */
+.world .lk-sky { fill: var(--sky-b); opacity: .35; }
+.world .wr-sky { fill: none; stroke: var(--sky-b); stroke-width: 24; stroke-linejoin: round; opacity: .32; }
 .world .fl { stroke: rgba(255, 255, 255, .7); stroke-width: 1.5; }
 .world .fl0 { fill: #ff8fb1; } .world .fl1 { fill: #ffd84d; } .world .fl2 { fill: #ffffff; } .world .fl3 { fill: #b38cff; }
 .world[data-sky=night] .w-flowers { opacity: .45; }
