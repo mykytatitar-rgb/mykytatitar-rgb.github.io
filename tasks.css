@@ -984,89 +984,238 @@ body {
 .rm-more { position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 2; padding: .2rem .55rem; border-radius: 999px;
   font-size: .74rem; font-weight: 600; color: #2fa36f; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 
+/* острів у небі; палітру дня, заходу й ночі задає data-sky (за годиною доби) */
 .world {
-  --sky1: #bfe3ff; --sky2: #fdf1dc; --grass1: #9fd97a; --grass2: #6fbf5a; --road: #f3dcae; --road-edge: #c9a46a; --gold: #f5a524;
-  --fog: rgba(240, 244, 255, .92); --tree1: #3f9d4c; --tree2: #2f7d3b; --trunk: #8a5a33; --rock: #a7a9b4; --ink: #1f2430;
+  --sky-a: #6fbcf5; --sky-b: #a9dcff; --sky-c: #e9f6ff;
+  --grass: #86cc63; --tex: #3f8a35;
+  --zt-meadow: #b2e07a; --zt-forest: #4e9d52; --zt-lake: #7fcb9a; --zt-hills: #c6c174; --zt-peaks: #cbd5dc;
+  --leaf1: #53b35b; --leaf2: #2f8a3e; --leaf3: #a3e284; --lb1: #b4dc6e; --lb2: #86bf4c;
+  --pine1: #3f9d55; --pine2: #276f3a; --trunk: #8a5a33; --birch: #f5f2ea;
+  --rock1: #a9adb8; --rock2: #d8dbe2; --rock3: #7d818d; --mt1: #a3acbf; --mt2: #737c95; --mt3: #bcc4d2;
+  --road: #f3dcae; --road-edge: #c9a46a; --gold: #f5a524;
+  --water1: #5cc3ea; --water2: #2b8cc2; --bank: #d9c18c;
+  --cliff1: #9b6b43; --cliff2: #77502f; --cliff3: #4f3420;
+  --wall: #fff3dc; --wall2: #ead6b4; --roof: #e0573f; --roof2: #b6402c; --wood: #a0703f; --wood2: #6f4a26;
+  --stone1: #eee9e1; --stone2: #cfc7ba; --croof: #5a6bd8; --croof2: #3f4cb0; --flag: #ff7a3d;
+  --win: #8cc4ee; --cloud: #ffffff; --cloud2: #d9e6f4; --glow: rgba(255, 196, 92, .55);
+  --fog: rgba(244, 248, 255, .88); --ink: #1f2430;
+  --sh-x: -14px; --sh-k: 1.25; --sh-o: 1;
   position: fixed; inset: 0; z-index: 60; overflow: hidden; outline: none; color: var(--ink);
-  background: linear-gradient(180deg, var(--sky1) 0%, var(--sky2) 38%, var(--grass2) 38.1%, var(--grass1) 100%);
-  touch-action: none; user-select: none; -webkit-user-select: none;
+  background: var(--sky-a); touch-action: none; user-select: none; -webkit-user-select: none;
 }
-:root[data-theme=dark] .world {
-  --sky1: #0b1030; --sky2: #2a2f5e; --grass1: #2c5a3a; --grass2: #1d3d2a; --road: #8d7a5c; --road-edge: #5c4c35; --gold: #ffb84d;
-  --fog: rgba(20, 24, 48, .9); --tree1: #2f6e3f; --tree2: #1f4f2c; --trunk: #5e3f25; --rock: #6b6e7c; --ink: #eef0ff;
+.world[data-sky=dusk] {
+  --sky-a: #4b3f8f; --sky-b: #e9787a; --sky-c: #ffc07a;
+  --grass: #93b85c; --tex: #5b7a2c;
+  --zt-meadow: #c2c66c; --zt-forest: #5f8a45; --zt-lake: #93b98a; --zt-hills: #d1b066; --zt-peaks: #c9b8c4;
+  --leaf1: #6aa24a; --leaf2: #3f7333; --leaf3: #d6c46a; --lb1: #d2c25e; --lb2: #a99a43;
+  --pine1: #4f8a4a; --pine2: #2f5f36; --trunk: #7a4a2e;
+  --rock1: #b39c9a; --rock2: #e7c7b4; --rock3: #7d6a72; --mt1: #b896a6; --mt2: #7f6280; --mt3: #d6b0b4;
+  --road: #f6cf9c; --road-edge: #c0895a; --gold: #ffb347;
+  --water1: #8f86d9; --water2: #5b4fa8; --bank: #d9b07c;
+  --cliff1: #8f5e3e; --cliff2: #6b452c; --cliff3: #432a1c;
+  --wall: #ffe4c4; --wall2: #e8bf99; --stone1: #f4dcc8; --stone2: #d6b49e;
+  --win: #ffd27a; --cloud: #ffd9c2; --cloud2: #e39aa0; --glow: rgba(255, 170, 80, .6);
+  --fog: rgba(255, 214, 196, .82);
+  --sh-x: -46px; --sh-k: 2.6; --sh-o: .8;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme=light]) .world {
-    --sky1: #0b1030; --sky2: #2a2f5e; --grass1: #2c5a3a; --grass2: #1d3d2a; --road: #8d7a5c; --road-edge: #5c4c35; --gold: #ffb84d;
-    --fog: rgba(20, 24, 48, .9); --tree1: #2f6e3f; --tree2: #1f4f2c; --trunk: #5e3f25; --rock: #6b6e7c; --ink: #eef0ff;
-  }
+.world[data-sky=night] {
+  --sky-a: #070b24; --sky-b: #1a1f4d; --sky-c: #2c2f66;
+  --grass: #2c5a3f; --tex: #173a26;
+  --zt-meadow: #3a6a44; --zt-forest: #1f4630; --zt-lake: #2d5a52; --zt-hills: #4e5a3c; --zt-peaks: #4e5668;
+  --leaf1: #2f6a44; --leaf2: #1b4630; --leaf3: #4c8a5c; --lb1: #557a46; --lb2: #3c5f35;
+  --pine1: #255a3c; --pine2: #163d29; --trunk: #4e3422; --birch: #c9c8d8;
+  --rock1: #5f6478; --rock2: #8a90a8; --rock3: #434759; --mt1: #4a5068; --mt2: #343950; --mt3: #5a6180;
+  --road: #8e7f68; --road-edge: #5f4f3a; --gold: #ffc35a;
+  --water1: #2d4f86; --water2: #1b2f5e; --bank: #6f6450;
+  --cliff1: #4f3626; --cliff2: #3a271b; --cliff3: #221710;
+  --wall: #8f8aa8; --wall2: #6f6a88; --roof: #8a3b42; --roof2: #6a2b33; --stone1: #8e8ca6; --stone2: #6c6a86; --croof: #3a428a; --croof2: #2b3270;
+  --win: #ffd27a; --cloud: #4a4f82; --cloud2: #2f3366; --glow: rgba(255, 190, 90, .5);
+  --fog: rgba(18, 22, 52, .82); --ink: #eef0ff;
+  --sh-x: 0px; --sh-k: 1; --sh-o: .35;
 }
+
+/* небо */
+.w-sky { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(180deg, var(--sky-a) 0%, var(--sky-b) 58%, var(--sky-c) 100%); }
+.w-sun { position: absolute; right: 9%; top: 7%; width: 150px; height: 150px; border-radius: 50%;
+  background: radial-gradient(circle, #fffef2 0 30%, #ffe89a 42%, rgba(255, 232, 154, .35) 55%, rgba(255, 232, 154, 0) 72%); }
+.world[data-sky=dusk] .w-sun { right: 7%; top: 13%; width: 270px; height: 270px;
+  background: radial-gradient(circle, #fff4d6 0 17%, #ffc26b 29%, rgba(255, 140, 90, .45) 47%, rgba(255, 120, 90, 0) 70%); }
+.w-moon { position: absolute; right: 10%; top: 8%; width: 76px; height: 76px; border-radius: 50%;
+  background: radial-gradient(circle at 64% 36%, rgba(0, 0, 0, .09) 0 9%, transparent 10%), radial-gradient(circle at 34% 66%, rgba(0, 0, 0, .07) 0 12%, transparent 13%),
+    radial-gradient(circle at 36% 34%, #fffef6, #ece6cf 62%, #cfc7a8);
+  box-shadow: 0 0 60px 16px rgba(255, 248, 210, .2); }
+.w-stars { position: absolute; left: 0; top: 0; width: 2px; height: 2px; border-radius: 50%; animation: w-twinkle 5s ease-in-out infinite alternate; }
+@keyframes w-twinkle { to { opacity: .55; } }
+.w-cloud2d { position: absolute; left: 0; width: calc(280px * var(--k, 1)); height: calc(90px * var(--k, 1)); opacity: .9;
+  background: radial-gradient(ellipse 30% 45% at 30% 60%, var(--cloud) 96%, transparent), radial-gradient(ellipse 34% 55% at 55% 45%, var(--cloud) 96%, transparent),
+    radial-gradient(ellipse 28% 40% at 76% 62%, var(--cloud) 96%, transparent), radial-gradient(ellipse 48% 22% at 52% 80%, var(--cloud2) 96%, transparent);
+  animation: w-drift 210s linear infinite; }
+@keyframes w-drift { from { transform: translateX(-320px); } to { transform: translateX(110vw); } }
+.world[data-sky=night] .w-cloud2d { opacity: .3; }
+.w-vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 55%, transparent 60%, rgba(8, 14, 40, .3) 100%); }
+
+/* сцена: камера, острів, урвище, туман */
 .w-stage { position: absolute; inset: 0; perspective: 900px; perspective-origin: 50% 20%; cursor: grab; }
 .w-stage:active { cursor: grabbing; }
 .w-tilt { position: absolute; left: 50%; top: 64%; width: 0; height: 0; transform-style: preserve-3d; transform-origin: 0 0; }
-.w-ground { position: absolute; left: 0; top: 0; transform-style: preserve-3d; transform-origin: 0 0;
-  background: radial-gradient(circle at 30% 20%, rgba(255,255,255,.12), transparent 40%), linear-gradient(180deg, var(--grass2), var(--grass1));
-  border-radius: 40px; }
+.w-ground { position: absolute; left: 0; top: 0; transform-style: preserve-3d; transform-origin: 0 0; background: var(--grass); }
 .w-tilt.glide, .w-ground.glide { transition: transform .7s cubic-bezier(.3, .8, .3, 1); }
-.w-roads { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
-.w-pad { pointer-events: none; }
-.w-ground::before { content: ''; position: absolute; inset: -3000px; background: var(--grass1); pointer-events: none; }
-.w-road-edge { fill: none; stroke: var(--road-edge); stroke-width: 70; stroke-linecap: round; }
-.w-road { fill: none; stroke: var(--road); stroke-width: 58; stroke-linecap: round; }
-.w-road-done { fill: none; stroke: var(--gold); stroke-width: 22; stroke-linecap: round; opacity: .85; }
-.w-road-mid { fill: none; stroke: rgba(255, 255, 255, .7); stroke-width: 4; stroke-dasharray: 14 18; }
-.w-fog { position: absolute; left: -400px; right: -400px; top: -600px; padding-top: 600px; box-sizing: content-box; pointer-events: none;
-  background: linear-gradient(180deg, var(--fog) 0%, var(--fog) 70%, transparent 100%); }
-.w-pad { position: absolute; width: 150px; height: 150px; transform: translate(-50%, -50%); border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,.55), rgba(255,255,255,0) 70%); }
-.w-pad.finish { background: radial-gradient(circle, rgba(245,165,36,.6), rgba(245,165,36,0) 70%); }
-.w-node { position: absolute; width: 84px; height: 84px; transform: translate(-50%, -50%) translateZ(2px); border-radius: 50%; border: 6px solid rgba(255,255,255,.9);
-  background: #d8dbe6; box-shadow: 0 10px 0 #a9adbd, 0 16px 24px rgba(0,0,0,.25); cursor: pointer; transform-style: preserve-3d; }
-.w-node.done { background: #48c78e; box-shadow: 0 10px 0 #2b8a5c, 0 16px 24px rgba(0,0,0,.25); }
-.w-node.now { background: var(--accent); box-shadow: 0 10px 0 #b5470f, 0 0 0 14px rgba(255,140,60,.35), 0 16px 30px rgba(0,0,0,.3); animation: w-pulse 1.8s ease-in-out infinite; }
-@keyframes w-pulse { 50% { box-shadow: 0 10px 0 #b5470f, 0 0 0 26px rgba(255,140,60,.12), 0 16px 30px rgba(0,0,0,.3); } }
+.w-tilt.intro, .w-ground.intro { transition: transform 1.7s cubic-bezier(.45, 0, .2, 1); }
+.w-roads { position: absolute; left: 0; top: 0; pointer-events: none; }
+.w-edge { position: absolute; left: 0; pointer-events: none; }
+.w-edge.front { height: 190px; transform-origin: 50% 0; transform: rotateX(-90deg);
+  background: repeating-linear-gradient(180deg, transparent 0 26px, rgba(0, 0, 0, .1) 26px 30px), linear-gradient(180deg, var(--grass) 0 9px, var(--cliff1) 9px, var(--cliff2) 52%, var(--cliff3));
+  clip-path: polygon(0 0, 100% 0, 100% 58%, 94% 72%, 88% 64%, 80% 86%, 71% 70%, 62% 94%, 53% 76%, 45% 100%, 36% 78%, 27% 92%, 18% 70%, 9% 84%, 0 62%); }
+.w-edge.side { top: 0; width: 190px; transform-origin: 0 50%; transform: rotateY(90deg);
+  background: linear-gradient(90deg, var(--grass) 0 9px, var(--cliff1) 9px, var(--cliff2) 52%, var(--cliff3)); }
+.w-fog { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; background: linear-gradient(180deg, var(--fog) 0%, var(--fog) 72%, transparent 100%); }
 .fogged { opacity: .45; }
+.w-label.fogged { opacity: .72; }
+.w-cloud { position: absolute; pointer-events: none; transform-origin: 50% 100%; transform: translate(-50%, -100%) translateZ(var(--z)) rotateX(-56deg) scale(var(--s)); }
+.w-cloud svg { display: block; overflow: visible; animation: w-float 11s ease-in-out infinite alternate; }
+@keyframes w-float { to { transform: translateX(40px); } }
+.world[data-sky=night] .w-cloud { opacity: .75; }
+
+/* земля (SVG) */
+.world .gtx { fill: none; stroke: var(--tex); stroke-width: 1.6; stroke-linecap: round; opacity: .32; }
+.world .zs-meadow { stop-color: var(--zt-meadow); }
+.world .zs-forest { stop-color: var(--zt-forest); }
+.world .zs-lake { stop-color: var(--zt-lake); }
+.world .zs-hills { stop-color: var(--zt-hills); }
+.world .zs-peaks { stop-color: var(--zt-peaks); }
+.world .w-road-edge { fill: none; stroke: var(--road-edge); stroke-width: 72; stroke-linecap: round; }
+.world .w-road { fill: none; stroke: var(--road); stroke-width: 58; stroke-linecap: round; }
+.world .w-road-done { fill: none; stroke: var(--gold); stroke-width: 20; stroke-linecap: round; opacity: .9; }
+.world .w-road-mid { fill: none; stroke: rgba(255, 255, 255, .65); stroke-width: 4; stroke-dasharray: 14 18; }
+.world .wr-bank { fill: none; stroke: var(--bank); stroke-width: 124; stroke-linejoin: round; }
+.world .wr-water { fill: none; stroke: var(--water1); stroke-width: 98; stroke-linejoin: round; }
+.world .wr-deep { fill: none; stroke: var(--water2); stroke-width: 38; opacity: .45; }
+.world .wr-shine { fill: none; stroke: rgba(255, 255, 255, .75); stroke-width: 3; stroke-dasharray: 10 48; animation: w-flow 3.2s linear infinite; }
+@keyframes w-flow { to { stroke-dashoffset: -58; } }
+.world .lk-bank { fill: var(--bank); }
+.world .lk-water { fill: var(--water1); }
+.world .lk-deep { fill: var(--water2); opacity: .45; }
+.world .lk-shine { fill: none; stroke: rgba(255, 255, 255, .7); stroke-width: 4; stroke-linecap: round; }
+.world .fl { stroke: rgba(255, 255, 255, .7); stroke-width: 1.5; }
+.world .fl0 { fill: #ff8fb1; } .world .fl1 { fill: #ffd84d; } .world .fl2 { fill: #ffffff; } .world .fl3 { fill: #b38cff; }
+.world[data-sky=night] .w-flowers { opacity: .45; }
+.world .br-deck { fill: var(--wood); }
+.world .br-seam { stroke: var(--wood2); stroke-width: 2; opacity: .6; }
+.world .br-rail { fill: var(--wood2); }
+.world .w-shadows { transform: translateX(var(--sh-x)); opacity: var(--sh-o); }
+.world .w-shadow { transform-box: fill-box; transform-origin: 100% 50%; transform: scaleX(var(--sh-k)); }
+.world .wg0 { stop-color: var(--glow); }
+.world .wg1 { stop-color: var(--glow); stop-opacity: 0; }
+.world[data-sky=day] .w-glows { display: none; }
+
+/* кроки */
+.w-node { position: absolute; width: 86px; height: 86px; transform: translate(-50%, -50%) translateZ(2px); border-radius: 50%; border: 6px solid rgba(255, 255, 255, .92);
+  background: radial-gradient(circle at 40% 35%, #f1f2f7, #c6cad8); box-shadow: 0 11px 0 #9da2b3, 0 18px 26px rgba(0, 0, 0, .28); cursor: pointer; }
+.w-node.done { background: radial-gradient(circle at 40% 35%, #70e2a9, #34b077); box-shadow: 0 11px 0 #238055, 0 18px 26px rgba(0, 0, 0, .28); }
+.w-node.now { background: radial-gradient(circle at 40% 35%, #ffa463, var(--accent)); box-shadow: 0 11px 0 #b5470f, 0 0 0 14px rgba(255, 140, 60, .35), 0 18px 30px rgba(0, 0, 0, .3);
+  animation: w-pulse 1.8s ease-in-out infinite; }
+@keyframes w-pulse { 50% { box-shadow: 0 11px 0 #b5470f, 0 0 0 28px rgba(255, 140, 60, .12), 0 18px 30px rgba(0, 0, 0, .3); } }
+.w-node:hover, .w-pin:hover { filter: brightness(1.08); }
 /* білборди: стоять на землі вертикально */
 .w-bb { position: absolute; transform-origin: 50% 100%; transform: translate(-50%, -100%) rotateX(-56deg); pointer-events: none; }
-.w-pin { margin-top: -30px; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: #fff; color: #7a8095;
-  font: 800 20px/1 var(--font-display, system-ui); box-shadow: 0 6px 14px rgba(0,0,0,.25); }
+.w-bb svg { display: block; overflow: visible; }
+.w-pin, .w-label { pointer-events: auto; cursor: pointer; }
+.w-pin { margin-top: -30px; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #fff; color: #6b7183;
+  font: 800 21px/1 var(--font-display, system-ui); box-shadow: 0 6px 14px rgba(0, 0, 0, .25); }
 .w-pin.done { background: #2fa36f; color: #fff; }
 .w-pin.now { opacity: 0; }
-.w-label { width: max-content; max-width: 220px; padding: 6px 12px; border-radius: 12px; background: rgba(255,255,255,.95); color: #1f2430;
-  font: 600 17px/1.25 var(--font-body, system-ui); box-shadow: 0 6px 16px rgba(0,0,0,.18); text-align: center; transform: translate(0, -100%) rotateX(-56deg); }
+.w-label { width: max-content; max-width: 230px; padding: 7px 13px; border-radius: 13px; background: rgba(255, 255, 255, .95); color: #1f2430;
+  font: 600 17px/1.25 var(--font-body, system-ui); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); transform: translate(0, -100%) rotateX(-56deg); }
 .w-label.left { transform: translate(-100%, -100%) rotateX(-56deg); }
-.w-label.done { color: #2b8a5c; }
+.w-label.done { color: #23845a; }
 .w-label.now { background: var(--accent); color: #fff; font-size: 19px; }
-.w-sign span { display: block; padding: 8px 16px; border-radius: 10px; background: #a0703f; color: #fff7e6; font: 800 20px/1 var(--font-display, system-ui);
-  box-shadow: 0 4px 0 #6f4a26, 0 10px 18px rgba(0,0,0,.25); }
-.w-sign::after { content: ''; display: block; width: 8px; height: 40px; margin: 0 auto; background: #6f4a26; border-radius: 3px; }
-.w-stage-sign span, .w-sign.w-stage span { background: #5a6bd8; box-shadow: 0 4px 0 #3c4aa8, 0 10px 18px rgba(0,0,0,.25); }
-.w-finish { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--gold); filter: drop-shadow(0 8px 10px rgba(0,0,0,.3)); }
-.w-finish span { max-width: 280px; padding: 8px 14px; border-radius: 12px; background: var(--gold); color: #3a2200; font: 800 20px/1.2 var(--font-display, system-ui); text-align: center; }
-.w-finish svg { width: 90px; height: 90px; }
-.w-me { filter: drop-shadow(0 12px 12px rgba(0,0,0,.35)); }
+.w-label small { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 13px; font-weight: 500; opacity: .75; }
+.w-label:hover { box-shadow: 0 0 0 3px var(--accent), 0 6px 16px rgba(0, 0, 0, .18); }
+
+/* табличка, хатинка, багаття, брами, замок, персонаж, салют */
+.w-sign span { display: block; padding: 8px 16px; border-radius: 10px; background: var(--wood); color: #fff7e6; font: 800 21px/1 var(--font-display, system-ui);
+  box-shadow: 0 4px 0 var(--wood2), 0 10px 18px rgba(0, 0, 0, .25); }
+.w-sign::after { content: ''; display: block; width: 8px; height: 42px; margin: 0 auto; background: var(--wood2); border-radius: 3px; }
+.w-castle { display: flex; flex-direction: column-reverse; align-items: center; gap: 54px; }
+.w-castle span { max-width: 320px; padding: 9px 18px; border-radius: 13px; background: var(--gold); color: #3a2200; font: 800 22px/1.2 var(--font-display, system-ui);
+  text-align: center; box-shadow: 0 8px 18px rgba(0, 0, 0, .25); }
+.w-me { filter: drop-shadow(0 12px 12px rgba(0, 0, 0, .35)); }
 .w-me .av { display: block; animation: w-bob 2.2s ease-in-out infinite; }
 @keyframes w-bob { 50% { transform: translateY(-10px); } }
-.w-tree { --s: 1; width: calc(60px * var(--s)); height: calc(90px * var(--s)); }
-.w-tree::before { content: ''; position: absolute; left: 50%; bottom: 0; width: 18%; height: 35%; transform: translateX(-50%); background: var(--trunk); border-radius: 3px; }
-.w-tree.round::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 75%; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, var(--tree1), var(--tree2)); }
-.w-tree.pine::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 82%; background: linear-gradient(90deg, var(--tree1), var(--tree2));
-  clip-path: polygon(50% 0, 78% 35%, 66% 35%, 92% 70%, 74% 70%, 100% 100%, 0 100%, 26% 70%, 8% 70%, 34% 35%, 22% 35%); }
-.w-tree.rock { height: calc(34px * var(--s)); }
-.w-tree.rock::before { width: 100%; height: 100%; border-radius: 50% 50% 20% 20%; background: linear-gradient(160deg, #fff4, transparent), var(--rock); }
-/* панелі поверх світу */
-.w-bar { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; justify-content: space-between; gap: .8rem;
-  padding: calc(.7rem + env(safe-area-inset-top, 0px)) 1rem .7rem; background: linear-gradient(180deg, rgba(0,0,0,.28), transparent); color: #fff; }
-.w-bar-t { display: flex; flex-direction: column; min-width: 0; text-shadow: 0 1px 4px rgba(0,0,0,.4); }
-.w-bar-t b { font-family: var(--font-display); font-size: 1.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.w-bar-t small { opacity: .9; }
-.w-close { flex: none; width: 2.6rem; height: 2.6rem; display: grid; place-items: center; border-radius: 50%; background: rgba(255,255,255,.92); color: #1f2430; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+.world .tk { fill: var(--trunk); }
+.world .lf1 { fill: var(--leaf1); } .world .lf2 { fill: var(--leaf2); } .world .lf3 { fill: var(--leaf3); }
+.world .lb1 { fill: var(--lb1); } .world .lb2 { fill: var(--lb2); }
+.world .pn1 { fill: var(--pine1); } .world .pn2 { fill: var(--pine2); }
+.world .snow { fill: #f4f8ff; }
+.world .ap { fill: #e8473b; } .world .bry { fill: #d23a6a; }
+.world .bk { fill: var(--birch); } .world .bm { stroke: #3b3b3b; stroke-width: 2.5; stroke-linecap: round; }
+.world .rk1 { fill: var(--rock1); } .world .rk2 { fill: var(--rock2); } .world .rk3 { fill: var(--rock3); }
+.world .ms { fill: #f5eee0; } .world .mc { fill: #e0483c; } .world .md { fill: #fff; }
+.world .rd { fill: none; stroke: #5e8f3a; stroke-width: 3; stroke-linecap: round; } .world .rc { fill: #7a4b2a; }
+.world .mt1 { fill: var(--mt1); } .world .mt2 { fill: var(--mt2); } .world .mt3 { fill: var(--mt3); }
+.world .hw { fill: var(--wall); } .world .hw2 { fill: var(--wall2); } .world .hr { fill: var(--roof); } .world .hr2 { fill: var(--roof2); }
+.world .hc { fill: var(--wood2); } .world .hd { fill: var(--wood); } .world .hk { fill: #ffd27a; }
+.world .hwin { fill: var(--win); } .world .hwf { stroke: var(--wood2); stroke-width: 2.5; }
+.world .smoke circle { fill: rgba(255, 255, 255, .75); transform-box: fill-box; transform-origin: center; animation: w-smoke 4.5s ease-out infinite; }
+.world .smoke circle:nth-child(2) { animation-delay: -1.5s; }
+.world .smoke circle:nth-child(3) { animation-delay: -3s; }
+@keyframes w-smoke { 0% { opacity: 0; transform: translateY(16px) scale(.6); } 30% { opacity: .9; } 100% { opacity: 0; transform: translateY(-26px) scale(1.5); } }
+.world .lg { fill: var(--wood); } .world .lg2 { fill: var(--wood2); }
+.world .f1 { fill: #ff7a2f; transform-box: fill-box; transform-origin: 50% 100%; animation: w-flick .45s ease-in-out infinite alternate; }
+.world .f2 { fill: #ffd84d; transform-box: fill-box; transform-origin: 50% 100%; animation: w-flick .35s ease-in-out infinite alternate-reverse; }
+@keyframes w-flick { to { transform: scaleY(.84) skewX(4deg); } }
+.world .cs1 { fill: var(--stone2); } .world .cs2 { fill: var(--stone1); } .world .csh { fill: rgba(0, 0, 0, .12); }
+.world .cr { fill: var(--croof); } .world .cr2 { fill: var(--croof2); }
+.world .fp { stroke: #6f4a26; stroke-width: 3; }
+.world .fg { fill: var(--flag); transform-box: fill-box; transform-origin: 0 50%; animation: w-flag 1.3s ease-in-out infinite alternate; }
+@keyframes w-flag { to { transform: scaleX(.82) skewY(7deg); } }
+.world .cg { fill: #3b2a20; } .world .cgl { stroke: #8a6a4a; stroke-width: 3; } .world .cw { fill: var(--win); }
+.world .gp { fill: #b8452e; } .world .gb { fill: #d4573b; } .world .gb2 { fill: #a63c28; }
+.world .gs { fill: #fff6e5; stroke: #a63c28; stroke-width: 3; }
+.world .gt { font: 800 19px var(--font-display, system-ui); fill: #7a2c1c; }
+.world .gn { font: 600 15px var(--font-body, system-ui); fill: #a0533f; }
+.world .cl1 { fill: var(--cloud); } .world .cl2 { fill: var(--cloud2); } .world .cl3 { fill: #fff; opacity: .6; }
+.w-fireworks { position: relative; width: 420px; height: 300px; }
+.w-fw { position: absolute; width: 0; height: 0; }
+.w-fw::before { content: ''; position: absolute; left: -18px; top: -18px; width: 36px; height: 36px; border-radius: 50%; opacity: 0;
+  background: radial-gradient(circle, #fff 0 20%, var(--c) 45%, transparent 70%); animation: w-flash 2.2s ease-out infinite; animation-delay: var(--d); }
+@keyframes w-flash { 0% { opacity: 1; transform: scale(.4); } 25% { opacity: .95; transform: scale(1.7); } 60%, 100% { opacity: 0; transform: scale(2.4); } }
+.w-fw i { position: absolute; left: -3px; top: 0; width: 7px; height: 46px; border-radius: 4px; background: linear-gradient(var(--c), transparent);
+  box-shadow: 0 0 8px var(--c); transform-origin: 50% 0; opacity: 0; transform: rotate(var(--a)) translateY(6px) scaleY(.2);
+  animation: w-burst 2.2s ease-out infinite; animation-delay: var(--d); }
+@keyframes w-burst { 0% { opacity: 1; transform: rotate(var(--a)) translateY(6px) scaleY(.2); } 50% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateY(118px) scaleY(1); } }
+
+/* поверх світу: табло, мінікарта, кнопки, картка кроку */
+.w-bar { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; pointer-events: none;
+  padding: calc(.8rem + env(safe-area-inset-top, 0px)) 1.1rem 1.8rem; background: linear-gradient(180deg, rgba(6, 12, 34, .45), transparent); color: #fff; }
+.w-bar > * { pointer-events: auto; }
+.w-bar-t { display: flex; flex-direction: column; gap: .15rem; min-width: 0; text-shadow: 0 1px 4px rgba(0, 0, 0, .45); }
+.w-bar-t small { opacity: .85; font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; }
+.w-bar-t b { font-family: var(--font-display); font-size: 1.35rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-prog-row { display: flex; align-items: center; gap: .6rem; font-size: .92rem; font-weight: 600; }
+.w-prog { flex: none; width: 190px; height: 9px; border-radius: 99px; background: rgba(255, 255, 255, .28); overflow: hidden; }
+.w-prog i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ffe08a, var(--gold)); box-shadow: 0 0 10px rgba(255, 196, 80, .8); }
+.w-close { flex: none; width: 2.6rem; height: 2.6rem; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, .92); color: #1f2430; box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
+.w-mini { position: absolute; left: 1rem; bottom: 1rem; width: 132px; height: 236px; padding: 8px; border-radius: 18px; cursor: pointer;
+  background: rgba(255, 255, 255, .78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 10px 28px rgba(0, 0, 0, .22); }
+.world[data-sky=night] .w-mini { background: rgba(20, 24, 56, .72); }
+.w-mini svg { display: block; width: 100%; height: 100%; }
+.w-mini .mm-land { fill: var(--grass); }
+.w-mini .mm-water { fill: var(--water1); }
+.w-mini .mm-river { fill: none; stroke: var(--water1); stroke-width: 70; }
+.w-mini .mm-road { fill: none; stroke: var(--road); stroke-width: 46; stroke-linecap: round; }
+.w-mini .mm-done { fill: none; stroke: var(--gold); stroke-width: 46; stroke-linecap: round; }
+.w-mini .mm-node { fill: #fff; stroke: #8b90a3; stroke-width: 12; }
+.w-mini .mm-node.done { fill: #48c78e; stroke: #2b8a5c; }
+.w-mini .mm-node.now { fill: var(--accent); stroke: #fff; }
+.w-mini .mm-castle { fill: var(--croof); }
+.w-mini .w-mini-me { fill: var(--accent); stroke: #fff; stroke-width: 16; }
+.w-mini .w-mini-cam { fill: rgba(255, 255, 255, .16); stroke: #fff; stroke-width: 14; stroke-dasharray: 40 26; }
 .w-ctrl { position: absolute; right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
-.w-ctrl button { min-width: 2.6rem; height: 2.6rem; padding: 0 .9rem; border-radius: 999px; background: rgba(255,255,255,.94); color: #1f2430; font-weight: 700; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+.w-ctrl button { min-width: 2.6rem; height: 2.6rem; padding: 0 .9rem; border-radius: 999px; background: rgba(255, 255, 255, .94); color: #1f2430; font-weight: 700; box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
 .w-ctrl button.me { background: var(--accent); color: #fff; }
-.w-pop { position: absolute; left: 50%; bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(26rem, calc(100% - 2rem));
-  padding: 1rem 1.1rem; border-radius: 1.2rem; background: var(--surface); color: var(--text, inherit); box-shadow: 0 18px 40px rgba(0,0,0,.3); display: flex; flex-direction: column; gap: .35rem; }
+.w-pop { position: absolute; left: 50%; bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(27rem, calc(100% - 2rem));
+  padding: 1rem 1.1rem; border-radius: 1.2rem; background: var(--surface); color: var(--text, inherit); box-shadow: 0 18px 40px rgba(0, 0, 0, .3); display: flex; flex-direction: column; gap: .35rem; }
 .w-pop small { color: var(--muted); }
 .w-pop-title { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; padding-right: 2rem; overflow-wrap: anywhere; }
 .w-pop-act { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
@@ -1076,8 +1225,10 @@ body {
   .w-ctrl { left: 1rem; justify-content: center; }
   .w-ctrl button[aria-label] { display: none; }
   .w-ctrl button { padding: 0 .8rem; }
+  .w-mini { display: none; }
+  .w-prog { width: 110px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .w-node.now, .w-me .av { animation: none; }
-  .w-tilt.glide, .w-ground.glide { transition: none; }
+  .w-node.now, .w-me .av, .w-cloud svg, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .world .wr-shine, .w-stars, .w-fw i { animation: none; }
+  .w-tilt.glide, .w-ground.glide, .w-tilt.intro, .w-ground.intro { transition: none; }
 }

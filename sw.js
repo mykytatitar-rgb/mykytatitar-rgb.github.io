@@ -5,7 +5,7 @@
    мережі немає чи вона надто повільна. Тож нова версія приходить з першим
    же відкриттям, і нічого піднімати руками не треба. */
 
-var CACHE = 'spravy-v6';
+var CACHE = 'spravy-v7';
 
 var SHELL = [
   './',
@@ -13,6 +13,7 @@ var SHELL = [
   './tasks.js',
   './datepick.js',
   './avatar.js',
+  './world.js',
   './manifest.webmanifest',
   './icon.svg',
   './icon-192.png',
