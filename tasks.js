@@ -1913,6 +1913,70 @@
       isH ? null : stepAdder(g));
   }
 
+  /* ---------- наявні справи як кроки цілі ----------
+     Крок цілі — підзавдання цілі. Наявну справу можна прив'язати, навіть виконану: тоді
+     вона стає пройденим кроком на початку доріжки. Не беремо звички та їхні виконання,
+     справи з власними підзавданнями (вкладеність одна) і саму ціль. */
+  function canAttach(t, g) {
+    return t !== g && !t.parentId && !t.goal && !t.habit && t.repeat === 'none' && !childrenOf(t.id).length;
+  }
+  function attachSteps(g, list) {
+    var was = list.map(function (t) { return [t, t.parentId, t.listId, t.order]; });
+    var kids = childrenOf(g.id), min = 0, max = 0;
+    kids.forEach(function (c, i) { if (!i || c.order < min) min = c.order; if (!i || c.order > max) max = c.order; });
+    // виконані — пройдені кроки на початку, за датою; решта — після наявних
+    var done = list.filter(function (t) { return t.done; }).sort(function (a, b) { return (a.doneAt || '').localeCompare(b.doneAt || ''); });
+    var open = list.filter(function (t) { return !t.done; });
+    done.forEach(function (t, i) { t.order = (kids.length ? min : 0) - done.length + i; });
+    open.forEach(function (t, i) { t.order = (kids.length ? max : 0) + 1 + i; });
+    list.forEach(function (t) { t.parentId = g.id; t.listId = g.listId; });
+    commit();
+    toast('Додано до цілі: ' + list.length + ' ' + forms(list.length, 'крок', 'кроки', 'кроків') + '.', function () {
+      was.forEach(function (w) { w[0].parentId = w[1]; w[0].listId = w[2]; w[0].order = w[3]; });
+      commit();
+    }, 8000);
+  }
+  /** Вікно вибору наявних справ: пошук, позначити кілька, «Додати N». */
+  function openAttach(g) {
+    var picked = {}, q = '';
+    var all = tasks().filter(function (t) { return canAttach(t, g); }).sort(function (a, b) {
+      return (a.done - b.done) || (b.doneAt || '').localeCompare(a.doneAt || '') || a.order - b.order;
+    });
+    var layer = h('div', { class: 'star-layer' });
+    var listBox = h('div', { class: 'cands' });
+    var addBtn = h('button', { type: 'button', class: 'btn primary', disabled: true, onclick: function () {
+      var list = all.filter(function (t) { return picked[t.id]; });
+      close(); if (list.length) attachSteps(g, list);
+    } }, 'Додати');
+    var search = h('input', { type: 'search', placeholder: 'Пошук', autocomplete: 'off', 'aria-label': 'Пошук справ' });
+    search.addEventListener('input', function () { q = search.value.trim().toLowerCase(); paint(); });
+    function paint() {
+      var n = Object.keys(picked).length;
+      addBtn.disabled = !n; addBtn.textContent = n ? 'Додати ' + n : 'Додати';
+      var shown = all.filter(function (t) { return !q || t.title.toLowerCase().indexOf(q) >= 0; }).slice(0, 80);
+      listBox.replaceChildren.apply(listBox, shown.length ? shown.map(function (t) {
+        var on = !!picked[t.id], l = listOf(t.listId);
+        return h('button', { type: 'button', class: 'cand' + (on ? ' on' : ''), 'aria-pressed': String(on),
+          onclick: function () { if (on) delete picked[t.id]; else picked[t.id] = true; paint(); } },
+          h('span', { class: 'cand-mark' }, svg(t.done ? I.check : I.addTask, 18, 2)),
+          h('span', { class: 'cand-body' }, h('span', { class: 'cand-title' }, t.title || 'Без назви'),
+            h('span', { class: 'cand-meta' }, (t.done ? 'зроблено' + (t.doneAt ? ' ' + dueLabel(t.doneAt).toLowerCase() : '') + ' · ' : '') + (l ? l.name : ''))));
+      }) : [h('div', { class: 'empty' }, q ? 'Нічого не знайдено.' : 'Немає справ, які можна додати.')]);
+    }
+    function close() { layer.remove(); document.removeEventListener('keydown', onKey, true); }
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }
+    layer.append(h('div', { class: 'modal-scrim', onclick: close }),
+      h('div', { class: 'modal attach-pick', role: 'dialog', 'aria-label': 'Додати наявні справи до цілі' },
+        h('div', { class: 'modal-title' }, 'Кроки з наявних справ'),
+        h('div', { class: 'modal-sub' }, 'До цілі «' + g.title + '». Виконані стануть пройденими кроками на початку доріжки.'),
+        search, listBox,
+        h('div', { class: 'modal-foot' }, h('button', { type: 'button', class: 'btn', onclick: close }, 'Скасувати'), addBtn)));
+    paint();
+    document.body.append(layer);
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(function () { search.focus(); });
+  }
+
   /** Поле «Додати крок»: кроки цілі додаються один за одним, у кінець доріжки. */
   var goalDraft = { text: '', focused: false };
   function stepAdder(g) {
@@ -1931,7 +1995,9 @@
     }
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } });
     if (goalDraft.focused) setTimeout(function () { input.focus(); });
-    return h('div', { class: 'rm-add first-step-row' }, input, h('button', { type: 'button', class: 'btn', onclick: add }, svg(I.addTask, 16), 'Крок'));
+    return h('div', { class: 'rm-add-wrap' },
+      h('div', { class: 'rm-add first-step-row' }, input, h('button', { type: 'button', class: 'btn', onclick: add }, svg(I.addTask, 16), 'Крок')),
+      h('button', { type: 'button', class: 'link-btn', onclick: function () { openAttach(g); } }, 'Додати наявні справи, зокрема виконані'));
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
@@ -2341,6 +2407,8 @@
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Закрити', onclick: close }, svg(I.close, 20))),
         title,
         isShouting(t.title) ? h('button', { type: 'button', class: 'decaps', onclick: function () { set('title', calm(t.title)); } }, 'Аа  Прибрати капс') : null,
+        goalTask() && canAttach(t, goalTask()) ? h('button', { type: 'button', class: 'quiet-link', title: 'Зробити кроком цілі «' + goalTask().title + '»',
+          onclick: function () { attachSteps(goalTask(), [t]); } }, svg(I.flag, 16), 'Крок цілі «' + goalTask().title + '»') : null,
         isSomeday(t) ? h('div', { class: 'someday-note' },
           h('span', {}, 'Лежить у «Колись»: її не чіпали понад ' + SOMEDAY_DAYS + ' днів.'),
           h('button', { type: 'button', class: 'btn', onclick: function () { t.seen = today(); commit(); } }, 'Повернути в список')) : null,

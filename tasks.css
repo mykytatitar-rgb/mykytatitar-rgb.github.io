@@ -914,3 +914,8 @@ body {
 .rm-node.slot { border-style: dashed; background: transparent; }
 .rm-node.finish { background: var(--surface-2); color: var(--accent); border-color: var(--accent); }
 .rm-add .btn { display: inline-flex; align-items: center; gap: .3rem; }
+.rm-add-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; }
+.rm-add-wrap .rm-add { align-self: stretch; }
+.attach-pick input[type=search] { background: var(--surface-2); border: 1px solid var(--line); border-radius: .75rem; padding: .55rem .75rem; }
+.attach-pick .cands { max-height: 50vh; overflow: auto; }
+.cand.on { border-color: var(--accent); background: var(--accent-soft); }
