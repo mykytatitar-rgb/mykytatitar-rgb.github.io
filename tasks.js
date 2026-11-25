@@ -28,6 +28,11 @@
   var PUSH_DELAY = 1200;
   var PULL_MS = 20000;                // як часто дивитися, чи не змінилось щось на іншому пристрої
   var RETRY_MS = 15000;
+  // Supabase заблокував проєкт (вичерпано місячний ліміт безкоштовного плану): довбати
+  // сервер щопівхвилини марно — чекаємо 10 хвилин або дотику «Спробувати зараз»
+  var QUOTA_PAUSE_MS = 10 * 60000;
+  var pausedUntil = 0;
+  function isQuotaBlock(e) { return /exceed_\w*quota|restricted due to the following violations/i.test((e && e.message) || ''); }
   var OVERLAP_MS = 90000;             // дочитуємо трохи назад — на випадок розбіжності годинників
   var PAGE = 1000;
 
@@ -640,16 +645,20 @@
     timer = setTimeout(sync, ms);
   }
 
-  function setSync(s, text) {
+  function setSync(s, text, retry) {
     var el = $('sync');
     if (!el) return;
     el.dataset.s = s;
-    el.lastElementChild.textContent = text;
+    el.querySelector('span').textContent = text;
+    var old = el.querySelector('button');
+    if (old) old.remove();
+    if (retry) el.append(h('button', { type: 'button', class: 'link-btn', onclick: function () { pausedUntil = 0; sync(); } }, 'Спробувати зараз'));
   }
 
   function sync() {
     clearTimeout(timer);
     if (!BASE || !signedIn()) return Promise.resolve();
+    if (Date.now() < pausedUntil) return Promise.resolve();   // сервер на паузі: зміни чекають тут
     if (syncing) { again = true; return Promise.resolve(); }
     syncing = true;
     if (Object.keys(outbox).length) setSync('wait', 'Зберігаю…');
@@ -662,7 +671,11 @@
     }).catch(function (e) {
       failed = true;
       if (e && e.expired) { showLogin('Сесія закінчилась. Увійдіть ще раз, нічого не загубиться.'); return; }
-      if (navigator.onLine === false || (e && e.name === 'TypeError')) {
+      if (isQuotaBlock(e)) {
+        pausedUntil = Date.now() + QUOTA_PAUSE_MS;
+        lastProblem = 'Сервер на паузі: вичерпано місячний безкоштовний ліміт Supabase. Справи збережені на цьому пристрої.';
+        setSync('local', 'Сервер на паузі: вичерпано місячний ліміт Supabase. Усе збережено тут і поїде само, щойно сервер відновиться.', true);
+      } else if (navigator.onLine === false || (e && e.name === 'TypeError')) {
         lastProblem = 'Немає зв\'язку з сервером. Справи з\'являться, щойно буде інтернет.';
         setSync('local', 'Немає зв\'язку. Зміни збережені тут і поїдуть самі');
       } else {
@@ -673,6 +686,7 @@
     }).then(function () {
       syncing = false;
       if (again && !failed) { again = false; schedule(300); }
+      else if (Date.now() < pausedUntil) schedule(pausedUntil - Date.now() + 100);
       else if (Object.keys(outbox).length) schedule(failed ? RETRY_MS : PUSH_DELAY);
     });
   }
