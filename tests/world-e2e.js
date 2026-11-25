@@ -67,6 +67,15 @@ const camOf = p => p.evaluate(() => getComputedStyle(document.querySelector('.w-
     assert(st && st.y > 0 && st.y < 950 && st.x > 0 && st.x < 1600, '«Старт» переносить до початку шляху');
     await D.screenshot({ path: SHOT + 'world-start.png' });
     await w.locator('button', { hasText: 'До мене' }).click(); await sleep(900);
+    // проєкція мапи збігається з тим, де CSS справді малює сцену: центр кнопки поточного кроку
+    const align = await D.evaluate(() => {
+      const W = window.SpravyWorld, m = new DOMMatrix(getComputedStyle(document.querySelector('.w-ground')).transform);
+      const z = parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('.w-tilt').style.transform)[1]);
+      const b = document.querySelector('.w-node.now'), r = b.getBoundingClientRect();
+      const p = W.project({ x: -m.m41, y: -m.m42, z }, { w: innerWidth, h: innerHeight }, parseFloat(b.style.left), parseFloat(b.style.top));
+      return Math.hypot(r.x + r.width / 2 - p.x, r.y + r.height / 2 - p.y);
+    });
+    assert(align < 8, 'проєкція мапи збігається з CSS-сценою (розбіжність ' + align.toFixed(1) + ' px)');
     // клік по поточному кроку: картка з діями
     await w.locator('.w-node.now').click(); await sleep(300);
     const pop = w.locator('.w-pop');
@@ -76,7 +85,13 @@ const camOf = p => p.evaluate(() => getComputedStyle(document.querySelector('.w-
     assert(await w.locator('.w-node.done').count() === 7 && /Lesson 8/.test(await w.locator('.w-node.now').getAttribute('aria-label')), 'персонаж іде до кроку 8');
     // відкрити картку справи з мапи
     await w.locator('button', { hasText: 'Старт' }).click(); await sleep(900);
-    await w.locator('.w-node.done').first().click(); await sleep(300);
+    // клік туди, де намальовано майданчик кроку 1 (як рука користувача)
+    const p1 = await D.evaluate(() => {
+      const W = window.SpravyWorld, m = new DOMMatrix(getComputedStyle(document.querySelector('.w-ground')).transform);
+      const z = parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('.w-tilt').style.transform)[1]);
+      const P = W.layout(13).P[1]; return W.project({ x: -m.m41, y: -m.m42, z }, { w: innerWidth, h: innerHeight }, P[0], P[1]);
+    });
+    await D.mouse.click(p1.x, p1.y); await sleep(300);
     await w.locator('.w-pop button', { hasText: 'Відкрити картку' }).click(); await sleep(500);
     assert(await D.locator('.world').count() === 0 && await D.locator('.drawer').count() === 1, 'мапа закрилась, відкрилась картка кроку');
     await D.keyboard.press('Escape'); await sleep(400);

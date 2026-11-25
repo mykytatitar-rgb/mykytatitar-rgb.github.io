@@ -1061,7 +1061,7 @@ body {
 .w-ground { position: absolute; left: 0; top: 0; transform-style: preserve-3d; transform-origin: 0 0; background: var(--grass); }
 .w-over { position: absolute; left: 0; top: 0; transform-style: preserve-3d; transform-origin: 0 0; pointer-events: none; }
 .w-sprites { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
-.w-node { pointer-events: auto; }
+button.w-node { pointer-events: auto; }
 .w-roads { position: absolute; left: 0; top: 0; pointer-events: none; }
 .w-edge { position: absolute; left: 0; pointer-events: none; }
 .w-edge.front { height: 190px; transform-origin: 50% 0; transform: rotateX(-90deg);
@@ -1109,26 +1109,38 @@ body {
 .world[data-sky=day] .w-glows { display: none; }
 
 /* кроки */
-.w-node { position: absolute; width: 86px; height: 86px; transform: translate(-50%, -50%) translateZ(2px); border-radius: 50%; border: 6px solid rgba(255, 255, 255, .92);
+button.w-node { position: absolute; width: 86px; height: 86px; transform: translate(-50%, -50%) translateZ(2px); border-radius: 50%; border: 6px solid rgba(255, 255, 255, .92);
   background: radial-gradient(circle at 40% 35%, #f1f2f7, #c6cad8); box-shadow: 0 11px 0 #9da2b3, 0 18px 26px rgba(0, 0, 0, .28); cursor: pointer; }
-.w-node.done { background: radial-gradient(circle at 40% 35%, #70e2a9, #34b077); box-shadow: 0 11px 0 #238055, 0 18px 26px rgba(0, 0, 0, .28); }
-.w-node.now { background: radial-gradient(circle at 40% 35%, #ffa463, var(--accent)); box-shadow: 0 11px 0 #b5470f, 0 0 0 14px rgba(255, 140, 60, .35), 0 18px 30px rgba(0, 0, 0, .3);
+button.w-node.now { background: radial-gradient(circle at 40% 35%, #ffa463, var(--accent)); box-shadow: 0 11px 0 #b5470f, 0 18px 30px rgba(0, 0, 0, .3); }
+/* пульс — кільце довкола, лише масштабом: компоновщик рухає його сам, без перемальовування; кнопка стоїть на місці */
+button.w-node.now::after { content: ''; position: absolute; inset: -20px; border-radius: 50%; border: 11px solid rgba(255, 140, 60, .32); pointer-events: none;
   animation: w-pulse 1.8s ease-in-out infinite; }
-@keyframes w-pulse { 50% { box-shadow: 0 11px 0 #b5470f, 0 0 0 28px rgba(255, 140, 60, .12), 0 18px 30px rgba(0, 0, 0, .3); } }
-.w-node:hover, .w-pin:hover { filter: brightness(1.08); }
+@keyframes w-pulse { 50% { scale: 1.1; opacity: .55; } }
+.w-pin:hover { filter: brightness(1.08); }
+/* майданчики на землі (SVG) */
+.w-roads .w-node { pointer-events: visiblePainted; cursor: pointer; }
+.w-roads .w-node:focus { outline: none; }
+.w-roads .w-node:focus .nd-ring, .w-roads .w-node:hover .nd-ring { fill: var(--accent); }
+.world .nd-ring { fill: rgba(255, 255, 255, .92); }
+.world .w-node.done .nd-side { fill: #238055; }
+.world .w-node.locked .nd-side { fill: #9da2b3; }
 /* білборди: стоять на землі вертикально */
 .w-bb { position: absolute; transform-origin: 50% 100%; transform: translate(-50%, -100%) rotateX(calc(var(--tilt) * -1)); pointer-events: none; }
 .w-bb svg { display: block; overflow: visible; }
 .w-pin, .w-label { pointer-events: auto; cursor: pointer; }
-.w-pin { margin-top: -30px; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #fff; color: #6b7183;
+/* позначка кроку: нульова точка на майданчику; номер — над нею, підпис — збоку; повертається як одне ціле */
+.w-step { width: 0; height: 0; transition: scale .25s ease; }
+.w-pin { position: absolute; left: -24px; top: -78px; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #fff; color: #6b7183;
   font: 800 21px/1 var(--font-display, system-ui); box-shadow: 0 6px 14px rgba(0, 0, 0, .25); }
 .w-pin.done { background: #2fa36f; color: #fff; }
 .w-pin.now { opacity: 0; }
-.w-label { width: max-content; max-width: 230px; padding: 7px 13px; border-radius: 13px; background: rgba(255, 255, 255, .95); color: #1f2430;
-  font: 600 17px/1.25 var(--font-body, system-ui); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); transform: translate(0, -100%) rotateX(calc(var(--tilt) * -1)); }
-.w-label.left { transform: translate(-100%, -100%) rotateX(calc(var(--tilt) * -1)); }
-.w-label.done { color: #23845a; }
-.w-label.now { background: var(--accent); color: #fff; font-size: 19px; }
+.w-label { position: absolute; left: 62px; bottom: -6px; display: block; width: max-content; max-width: 230px; padding: 7px 13px; border-radius: 13px;
+  background: rgba(255, 255, 255, .95); color: #1f2430; font: 600 17px/1.25 var(--font-body, system-ui); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); }
+.w-label.left { left: auto; right: 62px; }
+/* пройдене — тихіше, поточне — найпомітніше */
+.w-label.done { color: #23845a; font-size: 14px; padding: 5px 10px; background: rgba(255, 255, 255, .88); box-shadow: 0 3px 10px rgba(0, 0, 0, .12); }
+.w-pin.done { width: 40px; height: 40px; left: -20px; top: -70px; }
+.w-label.now { background: var(--accent); color: #fff; font-size: 20px; }
 .w-label small { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 13px; font-weight: 500; opacity: .75; }
 .w-label:hover { box-shadow: 0 0 0 3px var(--accent), 0 6px 16px rgba(0, 0, 0, .18); }
 
@@ -1139,9 +1151,10 @@ body {
 .w-castle { display: flex; flex-direction: column-reverse; align-items: center; gap: 54px; }
 .w-castle span { max-width: 320px; padding: 9px 18px; border-radius: 13px; background: var(--gold); color: #3a2200; font: 800 22px/1.2 var(--font-display, system-ui);
   text-align: center; box-shadow: 0 8px 18px rgba(0, 0, 0, .25); }
-.w-me { filter: drop-shadow(0 12px 12px rgba(0, 0, 0, .35)); }
-.w-me .av { display: block; animation: w-bob 2.2s ease-in-out infinite; }
-@keyframes w-bob { 50% { transform: translateY(-10px); } }
+/* персонаж: тінь лежить на землі (SVG), а «підстрибує» сам шар — уздовж нормалі землі, без перемальовування */
+.w-me { animation: w-bob 2.2s ease-in-out infinite; }
+.w-me .av { display: block; }
+@keyframes w-bob { 50% { translate: 0 0 14px; } }
 .world .tk { fill: var(--trunk); }
 .world .lf1 { fill: var(--leaf1); } .world .lf2 { fill: var(--leaf2); } .world .lf3 { fill: var(--leaf3); }
 .world .lb1 { fill: var(--lb1); } .world .lb2 { fill: var(--lb2); }
@@ -1229,5 +1242,5 @@ body {
   .w-prog { width: 110px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .w-node.now, .w-me .av, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .world .wr-shine, .w-stars, .w-fw i { animation: none; }
+  button.w-node.now::after, .w-me, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .world .wr-shine, .w-stars, .w-fw i { animation: none; }
 }

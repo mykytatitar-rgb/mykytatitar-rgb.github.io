@@ -111,6 +111,17 @@ const inView = b => !!b && b.x + b.width > 0 && b.x < VW && b.y + b.height > 0 &
       return Math.round(w * h / (a.width * a.height) * 100);
     });
     assert(hidden < 5, 'брама «Етап 2» не закриває підпис кроку 6 (перекрито ' + hidden + '%)');
+    // підписи: поточний і два наступні читаються (≥ 13 px на екрані); поточний — найпомітніший
+    await w.locator('button', { hasText: 'До мене' }).click(); await sleep(1200);
+    const sizes = await D.evaluate(() => [...document.querySelectorAll('.w-label')].map(l => {
+      const r = l.getBoundingClientRect();
+      return { now: l.classList.contains('now'), done: l.classList.contains('done'), px: parseFloat(getComputedStyle(l).fontSize) * (r.height / l.offsetHeight),
+        seen: r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth };
+    }));
+    const ni = sizes.findIndex(x => x.now), ahead = sizes.slice(ni, ni + 3);
+    assert(ahead.length === 3 && ahead.every(x => x.seen && x.px >= 13), 'підписи поточного й двох наступних ≥ 13 px: ' + ahead.map(x => x.px.toFixed(1)).join(', '));
+    const doneMax = Math.max(...sizes.filter(x => x.done && x.seen).map(x => x.px));
+    assert(sizes[ni].px > doneMax, 'поточний підпис помітніший за пройдені: ' + sizes[ni].px.toFixed(1) + ' > ' + doneMax.toFixed(1));
     // піни й підписи теж клікаються
     await w.locator('.w-pin[data-step="9"]').click(); await sleep(300);
     assert(/Крок 9 з 13/.test(await w.locator('.w-pop').textContent().catch(() => '')), 'клік по номеру кроку відкриває його');

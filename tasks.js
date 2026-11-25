@@ -2253,13 +2253,14 @@
     var goal = { x: to.x == null ? c.x : to.x, y: to.y == null ? c.y : to.y, z: to.z == null ? c.z : to.z };
     camClamp(goal);
     cancelAnimationFrame(world.anim);
-    if (!ms || reduceMq.matches) { Object.assign(c, goal); camApply(); return; }
+    if (!ms || reduceMq.matches) { Object.assign(c, goal); camApply(); labelScale(); return; }
     (function step() {
       if (!world) return;
       var k = Math.min(1, (performance.now() - t0) / ms), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
       c.x = from.x + (goal.x - from.x) * e; c.y = from.y + (goal.y - from.y) * e; c.z = from.z + (goal.z - from.z) * e;
       camApply(true);
       if (k < 1) world.anim = requestAnimationFrame(step);
+      else labelScale();
     })();
   }
   /** Поставити сцену за камерою. now — малювати рослини одразу (ми вже в кадрі анімації), інакше — у найближчому кадрі. */
@@ -2273,6 +2274,26 @@
     if (mc) { mc.setAttribute('cx', Math.round(c.x)); mc.setAttribute('cy', Math.round(c.y)); }
     if (now) drawSprites();
     else if (!world.raf) world.raf = requestAnimationFrame(function () { if (world) { world.raf = 0; drawSprites(); } });
+  }
+
+  /** Підписи на відстані: поточний — 19 px на екрані, три наступні — не дрібніші за 15 px, пройдені — не більші за 15 px;
+      далекі кроки лишаються свого розміру в тумані (менше тиску й тісноти). Рахуємо, коли камера зупинилась:
+      під час руху масштаб не чіпаємо, щоб не перемальовувати кадр щоразу. */
+  var LABEL_AHEAD = 3;
+  var LABEL_PX = { now: 19, locked: 15, done: 15 };
+  function labelScale() {
+    if (!world || !world.over) return;
+    var W = window.SpravyWorld;
+    [].forEach.call(world.over.querySelectorAll('.w-step'), function (el) {
+      var lab = el.querySelector('.w-label'), p = W.project(world.cam, world.view, parseFloat(el.style.left), parseFloat(el.style.top));
+      if (!p || !lab) return;
+      var kind = lab.classList.contains('now') ? 'now' : lab.classList.contains('done') ? 'done' : 'locked';
+      var px = parseFloat(getComputedStyle(lab).fontSize) * p.k, want = LABEL_PX[kind] / px;
+      var ls = (kind === 'done' ? Math.max(0.7, Math.min(1, want)) : +el.getAttribute('data-ahead') > LABEL_AHEAD ? 1 : Math.max(1, Math.min(1.8, want))).toFixed(2);
+      // масштабуємо всю позначку (номер і підпис) рівномірно в 3D навколо майданчика: окремий масштаб підпису
+      // зробив би його окремим шаром, і компоновщик клав би його на землю
+      el.style.scale = ls + ' ' + ls + ' ' + ls;
+    });
   }
 
   /* ---------- рослини на полотні ----------
@@ -2334,7 +2355,12 @@
       world.cam.y = drag.cy - dy / (world.cam.z * 0.56);
       camApply();
     });
-    function end() { drag = null; setTimeout(function () { if (world) world.moved = false; }, 0); }
+    function end() {
+      if (drag && world.moved) labelScale();
+      drag = null;
+      setTimeout(function () { if (world) world.moved = false; }, 0);
+    }
+    var wheelEnd = 0;
     stage.addEventListener('pointerup', end);
     stage.addEventListener('pointercancel', end);
     stage.addEventListener('wheel', function (e) {
@@ -2343,6 +2369,8 @@
       if (e.ctrlKey) world.cam.z *= e.deltaY > 0 ? 0.92 : 1.08;
       else { world.cam.y += e.deltaY / world.cam.z; world.cam.x += e.deltaX / world.cam.z; }
       camApply();
+      clearTimeout(wheelEnd);
+      wheelEnd = setTimeout(labelScale, 200);
     }, { passive: false });
     world.layer.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') return;                     // Escape закриває мапу загальним шляхом
@@ -2379,6 +2407,7 @@
       worldMini(steps, nowI);
       if (!world.cam) world.cam = Object.assign(camAt(world.meI), { z: 0.9 });
       camApply(true);
+      labelScale();
       if (world.follow) { world.follow = false; camTo(camAt(world.meI), 700); }
     }
     worldPop(g, steps, nowI);
@@ -2386,12 +2415,33 @@
 
   function buildScene(g, steps, nowI) {
     var W = window.SpravyWorld, N = steps.length, L = W.layout(N), P = L.P;
+    var states = steps.map(function (st, k) { return st.done ? 'done' : k === nowI ? 'now' : 'locked'; });
     world.L = L;
     world.meI = nowI < 0 ? N + 1 : nowI + 1;
     var size = 'width:' + L.GW + 'px;height:' + L.H + 'px';
     // три шари сцени: земля → полотно з рослинами → «стоячі» елементи (кроки, будівлі, персонаж)
     var ground = h('div', { class: 'w-ground', style: size }), over = h('div', { class: 'w-over', style: size });
-    ground.innerHTML = W.groundSvg(L, world.meI);
+    ground.innerHTML = W.groundSvg(L, states);
+    function pick(k) { if (world && !world.moved) { world.pop = steps[k].id; paintWorld(); } }
+    // майданчики пройдених і майбутніх кроків намальовані на землі: клік і клавіатура — тут
+    [].forEach.call(ground.querySelectorAll('.w-node[data-step]'), function (n) {
+      var k = +n.getAttribute('data-step') - 1;
+      n.setAttribute('role', 'button'); n.setAttribute('tabindex', '0'); n.setAttribute('aria-label', 'Крок ' + (k + 1) + ': ' + steps[k].title);
+    });
+    // клік по землі: Chrome погано влучає в SVG під перспективою, тож шукаємо майданчик самі — зворотною проєкцією
+    ground.addEventListener('click', function (e) {
+      var r = world.stage.getBoundingClientRect(), q = W.unproject(world.cam, world.view, e.clientX - r.left, e.clientY - r.top), best = -1, bd = 56 * 56;
+      steps.forEach(function (st, k) {
+        if (states[k] === 'now') return;
+        var dx = P[k + 1][0] - q.u, dy = P[k + 1][1] - q.v;
+        if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = k; }
+      });
+      if (best >= 0) pick(best);
+    });
+    ground.addEventListener('keydown', function (e) {
+      var n = e.target.closest && e.target.closest('[data-step]');
+      if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(+n.getAttribute('data-step') - 1); }
+    });
     // урвище: острів висить у небі
     ground.append(h('div', { class: 'w-edge front', style: 'top:' + L.H + 'px;width:' + L.GW + 'px' }),
       h('div', { class: 'w-edge side', style: 'height:' + L.H + 'px' }),
@@ -2421,19 +2471,20 @@
     bb('w-house', c.house[0], c.house[1], W.art('house', 0, 1));
     bb('w-fire', c.fire[0], c.fire[1], W.art('fire', 0, 1));
     L.gates.forEach(function (gt) { bb('w-gate' + fog(gt.y), gt.x, gt.y, W.art('gate', 0, 1, gt.no, gt.name)); });
-    // кроки: майданчик на дорозі, номер над ним і підпис збоку — усе відкриває крок
+    // кроки: номер над майданчиком і підпис збоку — один «стоячий» елемент на крок (один шар замість двох).
+    // Поточний майданчик пульсує, тож він не в SVG, а окремою кнопкою — але теж на шарі землі: пласкі елементи
+    // серед «стоячих» ламають компоновщику 3D-сортування (підписи поруч зникали)
     steps.forEach(function (st, k) {
-      var p = P[k + 1], state = st.done ? 'done' : k === nowI ? 'now' : 'locked';
-      function pick() { if (world && !world.moved) { world.pop = st.id; paintWorld(); } }
-      over.append(h('button', { type: 'button', class: 'w-node ' + state, style: 'left:' + p[0] + 'px;top:' + p[1] + 'px',
-        'aria-label': 'Крок ' + (k + 1) + ': ' + st.title, onclick: pick }));
-      var pin = bb('w-pin ' + state, p[0], p[1], null, st.done ? svg(I.check, 22, 3) : h('b', {}, String(k + 1)));
-      pin.setAttribute('data-step', String(k + 1));
-      pin.addEventListener('click', pick);
-      var side = L.sides[k + 1], due = !st.done && st.due ? dueLabel(st.due) : '';
-      var lab = bb('w-label ' + state + (side < 0 ? ' left' : '') + fog(p[1]), p[0] + side * 62, p[1] + 6, null,
-        [(k + 1) + ' · ' + st.title, due ? h('small', {}, svg(I.cal, 13), due) : null]);
-      lab.addEventListener('click', pick);
+      var p = P[k + 1], state = states[k], side = L.sides[k + 1], due = !st.done && st.due ? dueLabel(st.due) : '';
+      function open() { pick(k); }
+      if (state === 'now') {
+        ground.append(h('button', { type: 'button', class: 'w-node now', style: 'left:' + p[0] + 'px;top:' + p[1] + 'px',
+          'aria-label': 'Крок ' + (k + 1) + ': ' + st.title, onclick: open }));
+      }
+      bb('w-step', p[0], p[1], null, [
+        h('span', { class: 'w-pin ' + state, 'data-step': String(k + 1), onclick: open }, st.done ? svg(I.check, 22, 3) : h('b', {}, String(k + 1))),
+        h('span', { class: 'w-label ' + state + (side < 0 ? ' left' : '') + fog(p[1]), onclick: open },
+          [(k + 1) + ' · ' + st.title, due ? h('small', {}, svg(I.cal, 13), due) : null])]).setAttribute('data-ahead', String(nowI < 0 ? -1 : k - nowI));
     });
     // фініш: замок з назвою цілі; усе пройдено — салют
     var cs = L.castle;
@@ -2448,7 +2499,7 @@
       bb('w-fwbox', cs[0], cs[1] - 300, null, fw);
     }
     // персонаж: на поточному кроці; усе пройдено — біля замку й радіє
-    var at = nowI < 0 ? [cs[0] + 120, cs[1] + 80] : P[nowI + 1];
+    var at = W.mePoint(L, states);
     bb('w-me', at[0], at[1], null, avatarEl(nowI < 0 ? 'cheer' : 'happy', 96));
     var pos = 'left:' + W.CAM.tx * 100 + '%;top:' + W.CAM.ty * 100 + '%';
     world.tilt = h('div', { class: 'w-tilt', style: pos }, ground);

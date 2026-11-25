@@ -241,12 +241,21 @@
   /** Розмір підніжжя (ширина, px) для тіні. */
   var FOOT = { pine: 66, round: 84, birch: 62, bush: 72, rock: 60, mushroom: 26, reed: 26, mountain: 330 };
 
-  /** Земля острова: трава, місцевості, вода, квіти, дорога (пройдене — золоте), міст, тіні, вогники. */
-  function groundSvg(L, walked) {
-    var P = L.P, o = [];
+  /** Де стоїть персонаж: на поточному кроці; коли все пройдено — біля замку. states — стан кожного кроку. */
+  function mePoint(L, states) {
+    var i = states.indexOf('now');
+    return i < 0 ? [L.castle[0] + 120, L.castle[1] + 80] : L.P[i + 1];
+  }
+
+  /** Земля острова: трава, місцевості, вода, квіти, дорога (пройдене — золоте), міст, майданчики кроків, тіні, вогники.
+      states — 'done' | 'now' | 'locked' для кожного кроку; поточний майданчик живий (пульсує), тож він не тут, а окремо. */
+  function groundSvg(L, states) {
+    var P = L.P, o = [], nowI = states.indexOf('now'), walked = nowI < 0 ? P.length - 1 : nowI + 1;
     o.push('<svg class="w-roads" width="' + GW + '" height="' + L.H + '" viewBox="0 0 ' + GW + ' ' + L.H + '" aria-hidden="true"><defs>' +
       '<radialGradient id="wsh"><stop offset="0" stop-color="#000" stop-opacity=".36"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>' +
       '<radialGradient id="wglow"><stop offset="0" class="wg0"/><stop offset="1" class="wg1"/></radialGradient>' +
+      '<radialGradient id="wnd-done" cx=".4" cy=".35"><stop offset="0" stop-color="#70e2a9"/><stop offset="1" stop-color="#34b077"/></radialGradient>' +
+      '<radialGradient id="wnd-locked" cx=".4" cy=".35"><stop offset="0" stop-color="#f1f2f7"/><stop offset="1" stop-color="#c6cad8"/></radialGradient>' +
       '<pattern id="wtex" width="150" height="150" patternUnits="userSpaceOnUse">');
     for (var t = 0; t < 22; t++) {
       var tx = r1(rnd(t * 1.7) * 150), ty = r1(rnd(t * 2.3) * 150);
@@ -291,6 +300,14 @@
       deck += '<rect class="br-rail" x="-86" y="-48" width="172" height="8" rx="4"/><rect class="br-rail" x="-86" y="40" width="172" height="8" rx="4"/>';
       o.push('<g class="w-bridge" transform="translate(' + R.x + ' ' + R.y + ') rotate(' + R.angle + ')">' + deck + '</g>');
     }
+    // майданчики кроків: товщина — темніше коло нижче, кільце, верх; клік і клавіатура — у tasks.js
+    states.forEach(function (st, i) {
+      if (st === 'now') return;
+      var p = P[i + 1];
+      o.push('<g class="w-node ' + st + '" data-step="' + (i + 1) + '" transform="translate(' + r1(p[0]) + ' ' + r1(p[1]) + ')">' +
+        '<ellipse cy="18" rx="50" ry="46" fill="url(#wsh)"/><circle class="nd-side" cy="11" r="43"/><circle class="nd-ring" r="43"/>' +
+        '<circle r="37" fill="url(#wnd-' + st + ')"/></g>');
+    });
     // тіні: усе, що стоїть, кидає тінь; сонце й довжину тіні задає небо (CSS)
     o.push('<g class="w-shadows">');
     function shadow(x, y, w, s) {
@@ -300,6 +317,8 @@
     shadow(L.camp.house[0], L.camp.house[1], 160, 1);
     shadow(L.camp.sign[0], L.camp.sign[1], 40, 1);
     shadow(L.castle[0], L.castle[1], 300, 1);
+    var me = mePoint(L, states);
+    shadow(me[0], me[1] + 4, 90, 1);
     L.gates.forEach(function (g) { shadow(g.x - 92, g.y, 34, 1); shadow(g.x + 92, g.y, 34, 1); });
     o.push('</g>');
     // вогники на вечір і ніч: пройдене, хатинка, багаття, замок
@@ -431,6 +450,13 @@
     var f = CAM.d / (CAM.d - Z), ox = view.w * CAM.ox, oy = view.h * CAM.oy;
     return { x: ox + (X - ox) * f, y: oy + (Y - oy) * f, k: cam.z * f };
   }
+  /** Зворотне: точка екрана → точка землі { u, v } (для кліків: хто під пальцем). */
+  function unproject(cam, view, sx, sy) {
+    var a = TILT * Math.PI / 180, ox = view.w * CAM.ox, oy = view.h * CAM.oy, tx = view.w * CAM.tx, ty = view.h * CAM.ty;
+    var w = CAM.d * (sy - ty) / (CAM.d * Math.cos(a) + (sy - oy) * Math.sin(a));
+    var f = CAM.d / (CAM.d - w * Math.sin(a)), X = ox + (sx - ox) / f;
+    return { u: cam.x + (X - tx) / cam.z, v: cam.y + w / cam.z };
+  }
   function spriteId(d) { return d.t === 'mountain' ? 'mountain-' + (d.v ? 1 : 0) : decalId(d); }
   /** SVG рослини чи гори зі справжніми кольорами (для растеризації в картинку); r — роздільність. */
   function sprite(id, colors, r) {
@@ -464,7 +490,7 @@
   }
 
   window.SpravyWorld = {
-    TILT: TILT, CAM: CAM, project: project, sprite: sprite, spriteId: spriteId, SPRITE_VARS: SPRITE_VARS, layout: layout, groundSvg: groundSvg, roadPath: roadPath, art: art, skyAt: skyAt,
+    TILT: TILT, CAM: CAM, project: project, unproject: unproject, mePoint: mePoint, sprite: sprite, spriteId: spriteId, SPRITE_VARS: SPRITE_VARS, layout: layout, groundSvg: groundSvg, roadPath: roadPath, art: art, skyAt: skyAt,
     zoneOfStep: zoneOfStep, zoneInfo: zoneInfo, rnd: rnd, riverY: riverY
   };
 })();

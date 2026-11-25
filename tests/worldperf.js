@@ -146,11 +146,11 @@ async function measure(browser, name) {
     const front = [...document.querySelectorAll('.w-bb, .w-node')].concat([...document.querySelectorAll('.w-bar, .w-mini, .w-ctrl, .w-pop')]);
     const area = r => Math.max(0, r.width) * Math.max(0, r.height);
     return all.slice(nowI, nowI + 3).map(l => {
-      const r = l.getBoundingClientRect(), y = parseFloat(l.style.top);
+      const r = l.getBoundingClientRect(), y = parseFloat((l.closest('.w-bb') || l).style.top);
       const px = parseFloat(getComputedStyle(l).fontSize) * (r.height / l.offsetHeight);
       let cover = 0;
       front.forEach(o => {
-        if (o === l || l.contains(o)) return;
+        if (o === l || l.contains(o) || o.contains(l)) return;
         const ui = !o.closest('.w-ground');
         const oy = parseFloat(o.style.top);
         if (!ui && !(oy > y)) return;                         // заступає лише те, що ближче до камери, або інтерфейс поверх
