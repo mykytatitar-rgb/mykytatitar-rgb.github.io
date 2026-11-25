@@ -1055,12 +1055,13 @@ body {
 .w-vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 55%, transparent 60%, rgba(8, 14, 40, .3) 100%); }
 
 /* сцена: камера, острів, урвище, туман */
-.w-stage { position: absolute; inset: 0; perspective: 900px; perspective-origin: 50% 20%; cursor: grab; }
+.w-stage { position: absolute; inset: 0; cursor: grab; }
 .w-stage:active { cursor: grabbing; }
-.w-tilt { position: absolute; left: 50%; top: 64%; width: 0; height: 0; transform-style: preserve-3d; transform-origin: 0 0; }
+.w-tilt { position: absolute; width: 0; height: 0; transform-style: preserve-3d; transform-origin: 0 0; }
 .w-ground { position: absolute; left: 0; top: 0; transform-style: preserve-3d; transform-origin: 0 0; background: var(--grass); }
-.w-tilt.glide, .w-ground.glide { transition: transform .7s cubic-bezier(.3, .8, .3, 1); }
-.w-tilt.intro, .w-ground.intro { transition: transform 1.7s cubic-bezier(.45, 0, .2, 1); }
+.w-over { position: absolute; left: 0; top: 0; transform-style: preserve-3d; transform-origin: 0 0; pointer-events: none; }
+.w-sprites { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.w-node { pointer-events: auto; }
 .w-roads { position: absolute; left: 0; top: 0; pointer-events: none; }
 .w-edge { position: absolute; left: 0; pointer-events: none; }
 .w-edge.front { height: 190px; transform-origin: 50% 0; transform: rotateX(-90deg);
@@ -1071,9 +1072,8 @@ body {
 .w-fog { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; background: linear-gradient(180deg, var(--fog) 0%, var(--fog) 72%, transparent 100%); }
 .fogged { opacity: .45; }
 .w-label.fogged { opacity: .72; }
-.w-cloud { position: absolute; pointer-events: none; transform-origin: 50% 100%; transform: translate(-50%, -100%) translateZ(var(--z)) rotateX(-56deg) scale(var(--s)); }
-.w-cloud svg { display: block; overflow: visible; animation: w-float 11s ease-in-out infinite alternate; }
-@keyframes w-float { to { transform: translateX(40px); } }
+.w-cloud { position: absolute; pointer-events: none; transform-origin: 50% 100%; transform: translate(-50%, -100%) translateZ(var(--z)) rotateX(calc(var(--tilt) * -1)) scale(var(--s)); }
+.w-cloud svg { display: block; overflow: visible; }
 .world[data-sky=night] .w-cloud { opacity: .75; }
 
 /* земля (SVG) */
@@ -1117,7 +1117,7 @@ body {
 @keyframes w-pulse { 50% { box-shadow: 0 11px 0 #b5470f, 0 0 0 28px rgba(255, 140, 60, .12), 0 18px 30px rgba(0, 0, 0, .3); } }
 .w-node:hover, .w-pin:hover { filter: brightness(1.08); }
 /* білборди: стоять на землі вертикально */
-.w-bb { position: absolute; transform-origin: 50% 100%; transform: translate(-50%, -100%) rotateX(-56deg); pointer-events: none; }
+.w-bb { position: absolute; transform-origin: 50% 100%; transform: translate(-50%, -100%) rotateX(calc(var(--tilt) * -1)); pointer-events: none; }
 .w-bb svg { display: block; overflow: visible; }
 .w-pin, .w-label { pointer-events: auto; cursor: pointer; }
 .w-pin { margin-top: -30px; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: #fff; color: #6b7183;
@@ -1125,8 +1125,8 @@ body {
 .w-pin.done { background: #2fa36f; color: #fff; }
 .w-pin.now { opacity: 0; }
 .w-label { width: max-content; max-width: 230px; padding: 7px 13px; border-radius: 13px; background: rgba(255, 255, 255, .95); color: #1f2430;
-  font: 600 17px/1.25 var(--font-body, system-ui); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); transform: translate(0, -100%) rotateX(-56deg); }
-.w-label.left { transform: translate(-100%, -100%) rotateX(-56deg); }
+  font: 600 17px/1.25 var(--font-body, system-ui); box-shadow: 0 6px 16px rgba(0, 0, 0, .18); transform: translate(0, -100%) rotateX(calc(var(--tilt) * -1)); }
+.w-label.left { transform: translate(-100%, -100%) rotateX(calc(var(--tilt) * -1)); }
 .w-label.done { color: #23845a; }
 .w-label.now { background: var(--accent); color: #fff; font-size: 19px; }
 .w-label small { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 13px; font-weight: 500; opacity: .75; }
@@ -1229,6 +1229,5 @@ body {
   .w-prog { width: 110px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .w-node.now, .w-me .av, .w-cloud svg, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .world .wr-shine, .w-stars, .w-fw i { animation: none; }
-  .w-tilt.glide, .w-ground.glide, .w-tilt.intro, .w-ground.intro { transition: none; }
+  .w-node.now, .w-me .av, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .world .wr-shine, .w-stars, .w-fw i { animation: none; }
 }

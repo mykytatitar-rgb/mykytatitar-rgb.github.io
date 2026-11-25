@@ -2156,43 +2156,57 @@
      Пройдене — золоте, попереду — туман, а замок видно завжди: мета перед очима.
      Без бібліотек: лише трансформації браузера, тож працює офлайн і не важчає. */
   var world = null, worldIntro = false;
-  var TILT = 56;
 
   function openWorld() {
     var g = goalTask(), W = window.SpravyWorld;
     if (!g || world || !W) return;
     var sky = W.skyAt(new Date());
-    var layer = h('div', { class: 'world', 'data-sky': sky, role: 'dialog', tabindex: '-1', 'aria-label': 'Мапа цілі «' + g.title + '»' });
-    world = { layer: layer, cam: null, pop: '', moved: false, follow: false, stamp: '', L: null, meI: 0,
-      stage: h('div', { class: 'w-stage' }), hud: h('div', { class: 'w-bar' }),
+    var layer = h('div', { class: 'world', 'data-sky': sky, role: 'dialog', tabindex: '-1', 'aria-label': 'Мапа цілі «' + g.title + '»',
+      style: '--tilt:' + W.TILT + 'deg' });
+    var stage = h('div', { class: 'w-stage', style: 'perspective:' + W.CAM.d + 'px;perspective-origin:' + W.CAM.ox * 100 + '% ' + W.CAM.oy * 100 + '%' });
+    world = { layer: layer, sky: sky, cam: null, pop: '', moved: false, follow: false, stamp: '', L: null, meI: 0, anim: 0, raf: 0, sprites: [],
+      view: { w: 0, h: 0 }, stage: stage, canvas: h('canvas', { class: 'w-sprites', 'aria-hidden': 'true' }), hud: h('div', { class: 'w-bar' }),
       mini: h('div', { class: 'w-mini', title: 'Уся мапа: клацніть, куди перенестись' }), popBox: h('div', { class: 'w-pop-box' }) };
-    layer.append(skyEl(sky), world.stage, h('div', { class: 'w-vig' }), world.hud, world.mini, worldCtrl(), world.popBox);
+    layer.append(skyEl(sky), stage, h('div', { class: 'w-vig' }), world.hud, world.mini, worldCtrl(), world.popBox);
     document.body.append(layer);
     pushOverlay('world');
+    window.addEventListener('resize', worldResize);
+    worldResize();
     wireWorld();
     paintWorld();
     if (!world) return;
     layer.focus({ preventScroll: true });
     // уперше за сеанс камера пролітає від старту до вас: видно, скільки вже пройдено
-    if (!worldIntro && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (!worldIntro && !reduceMq.matches) {
       worldIntro = true;
       var to = { x: world.cam.x, y: world.cam.y, z: world.cam.z };
       Object.assign(world.cam, camAt(0), { z: to.z * 0.85 });
-      camApply('');
-      setTimeout(function () { if (world) { Object.assign(world.cam, to); camApply('intro'); } }, 350);
+      camApply(true);
+      setTimeout(function () { if (world) camTo(to, 1700); }, 350);
     }
+  }
+  /** Прибрати мапу з екрана й зупинити її анімації. */
+  function dropWorld() {
+    cancelAnimationFrame(world.anim);
+    cancelAnimationFrame(world.raf);
+    window.removeEventListener('resize', worldResize);
+    world.layer.remove();
+    world = null;
   }
   function closeWorld(fromBack) {
     if (!world) return;
-    world.layer.remove();
-    world = null;
+    dropWorld();
     if (!fromBack) popOverlay('world');
   }
   /** Мапа поступається місцем іншому вікну в тому самому кроці історії (картка кроку, таймер). */
   function leaveWorld(to) {
-    world.layer.remove();
-    world = null;
+    dropWorld();
     swapOverlay('world', to);
+  }
+  function worldResize() {
+    if (!world) return;
+    world.view = { w: world.stage.clientWidth, h: world.stage.clientHeight };
+    if (world.L) camApply(true);
   }
 
   /** Небо позаду острова: сонце вдень і на заході, місяць і зорі вночі, хмари пливуть. */
@@ -2214,7 +2228,7 @@
   }
 
   function worldCtrl() {
-    function zoom(f) { world.cam.z *= f; camApply('glide'); }
+    function zoom(f) { camTo({ z: world.cam.z * f }, 300); }
     return h('div', { class: 'w-ctrl' },
       h('button', { type: 'button', onclick: function () { camGo(0); } }, 'Старт'),
       h('button', { type: 'button', class: 'me', onclick: function () { camGo(world.meI); } }, 'До мене'),
@@ -2223,28 +2237,91 @@
       h('button', { type: 'button', 'aria-label': 'Далі', onclick: function () { zoom(1 / 1.15); } }, '−'));
   }
 
-  /* ---------- камера ---------- */
+  /* ---------- камера ----------
+     Камера — точка землі у фокусі (x, y) і наближення z. Рухаємо її JS-анімацією, а не CSS-переходом:
+     полотно з рослинами має знати кожен проміжний кадр, щоб рослини не відставали від землі. */
   function camAt(k) { var p = world.L.P[k]; return { x: p[0], y: p[1] + 40 }; }
-  function camGo(k) { Object.assign(world.cam, camAt(k)); camApply('glide'); }
-  /** Поставити камеру: mode '' — одразу, 'glide' — плавно, 'intro' — повільний переліт. */
-  function camApply(mode) {
-    var c = world.cam, L = world.L;
-    c.x = Math.max(-150, Math.min(L.GW + 150, c.x));
-    c.y = Math.max(0, Math.min(L.H + 120, c.y));
+  function camGo(k) { camTo(camAt(k), 700); }
+  function camClamp(c) {
+    c.x = Math.max(-150, Math.min(world.L.GW + 150, c.x));
+    c.y = Math.max(0, Math.min(world.L.H + 120, c.y));
     c.z = Math.max(0.4, Math.min(1.6, c.z));
-    [world.tilt, world.ground].forEach(function (el) {
-      el.classList.toggle('glide', mode === 'glide');
-      el.classList.toggle('intro', mode === 'intro');
-    });
-    world.tilt.style.transform = 'rotateX(' + TILT + 'deg) scale(' + c.z + ')';
-    world.ground.style.transform = 'translate(' + (-c.x) + 'px,' + (-c.y) + 'px)';
+  }
+  /** Плавно перевести камеру в to (будь-які з x, y, z) за ms мілісекунд. */
+  function camTo(to, ms) {
+    var c = world.cam, from = { x: c.x, y: c.y, z: c.z }, t0 = performance.now();
+    var goal = { x: to.x == null ? c.x : to.x, y: to.y == null ? c.y : to.y, z: to.z == null ? c.z : to.z };
+    camClamp(goal);
+    cancelAnimationFrame(world.anim);
+    if (!ms || reduceMq.matches) { Object.assign(c, goal); camApply(); return; }
+    (function step() {
+      if (!world) return;
+      var k = Math.min(1, (performance.now() - t0) / ms), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      c.x = from.x + (goal.x - from.x) * e; c.y = from.y + (goal.y - from.y) * e; c.z = from.z + (goal.z - from.z) * e;
+      camApply(true);
+      if (k < 1) world.anim = requestAnimationFrame(step);
+    })();
+  }
+  /** Поставити сцену за камерою. now — малювати рослини одразу (ми вже в кадрі анімації), інакше — у найближчому кадрі. */
+  function camApply(now) {
+    var c = world.cam;
+    camClamp(c);
+    var tilt = 'rotateX(' + window.SpravyWorld.TILT + 'deg) scale(' + c.z + ')', move = 'translate(' + (-c.x) + 'px,' + (-c.y) + 'px)';
+    world.tilt.style.transform = tilt; world.tilt2.style.transform = tilt;
+    world.ground.style.transform = move; world.over.style.transform = move;
     var mc = world.mini.querySelector('.w-mini-cam');
     if (mc) { mc.setAttribute('cx', Math.round(c.x)); mc.setAttribute('cy', Math.round(c.y)); }
+    if (now) drawSprites();
+    else if (!world.raf) world.raf = requestAnimationFrame(function () { if (world) { world.raf = 0; drawSprites(); } });
   }
+
+  /* ---------- рослини на полотні ----------
+     Сотні «стоячих» 3D-елементів — це сотні шарів і проходів рендерингу. Тому дерева, кущі, каміння й гори
+     малюються на одному полотні між землею і «стоячими» елементами. Позицію й масштаб дає та сама проєкція,
+     що й CSS сцени (SpravyWorld.project), тож рослини стоять точно на своїх тінях і не спотворюються. */
+  var spriteCache = {};          // «небо/малюнок» → { bmp, w, h }; 'pending', поки растеризується
+  function spriteImg(id) {
+    var key = world.sky + '/' + id, c = spriteCache[key];
+    if (c) return c === 'pending' ? null : c;
+    spriteCache[key] = 'pending';
+    var W = window.SpravyWorld, st = getComputedStyle(world.layer), colors = {};
+    W.SPRITE_VARS.forEach(function (v) { colors[v] = st.getPropertyValue('--' + v).trim(); });
+    var R = 2 * Math.min(2, window.devicePixelRatio || 1), sp = W.sprite(id, colors, R), img = new Image();
+    img.onload = function () {
+      var cv = document.createElement('canvas');
+      cv.width = Math.round(sp.w * R); cv.height = Math.round(sp.h * R);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      spriteCache[key] = { bmp: cv, w: sp.w, h: sp.h };
+      if (world) camApply();
+    };
+    img.onerror = function () { delete spriteCache[key]; };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sp.svg);
+    return null;
+  }
+  function drawSprites() {
+    if (!world || !world.L) return;
+    var W = window.SpravyWorld, cv = world.canvas, view = world.view, dpr = Math.min(2, window.devicePixelRatio || 1);
+    var cw = Math.round(view.w * dpr), ch = Math.round(view.h * dpr);
+    if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, view.w, view.h);
+    world.sprites.forEach(function (sp) {                 // далекі першими: ближчі малюються поверх
+      var img = spriteImg(sp.id), p = img && W.project(world.cam, view, sp.x, sp.y);
+      if (!p) return;
+      var w = img.w * sp.s * p.k, hh = img.h * sp.s * p.k, x = p.x - w / 2, y = p.y - hh;
+      if (x > view.w || x + w < 0 || y > view.h || p.y < 0) return;
+      ctx.globalAlpha = sp.fog ? 0.45 : 1;
+      ctx.drawImage(img.bmp, x, y, w, hh);
+    });
+    ctx.globalAlpha = 1;
+  }
+
   /** Ходити: тягнути, колесо (з Ctrl — наблизити), стрілки чи WASD, клік по мінікарті. */
   function wireWorld() {
     var stage = world.stage, drag = null;
     stage.addEventListener('pointerdown', function (e) {
+      cancelAnimationFrame(world.anim);
       drag = { x: e.clientX, y: e.clientY, cx: world.cam.x, cy: world.cam.y, id: e.pointerId };
       world.moved = false;
     });
@@ -2255,34 +2332,34 @@
       if (!world.moved) return;
       world.cam.x = drag.cx - dx / world.cam.z;
       world.cam.y = drag.cy - dy / (world.cam.z * 0.56);
-      camApply('');
+      camApply();
     });
     function end() { drag = null; setTimeout(function () { if (world) world.moved = false; }, 0); }
     stage.addEventListener('pointerup', end);
     stage.addEventListener('pointercancel', end);
     stage.addEventListener('wheel', function (e) {
       e.preventDefault();
+      cancelAnimationFrame(world.anim);
       if (e.ctrlKey) world.cam.z *= e.deltaY > 0 ? 0.92 : 1.08;
       else { world.cam.y += e.deltaY / world.cam.z; world.cam.x += e.deltaX / world.cam.z; }
-      camApply('');
+      camApply();
     }, { passive: false });
     world.layer.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') return;                     // Escape закриває мапу загальним шляхом
       e.stopPropagation();                                // інші клавіші — лише мапі (не «нова справа» на «n»)
-      var k = e.key.toLowerCase(), step = 140;
+      var k = e.key.toLowerCase(), step = 140, c = world.cam;
       var m = { arrowup: [0, -step], w: [0, -step], 'ц': [0, -step], arrowdown: [0, step], s: [0, step], 'і': [0, step],
         arrowleft: [-step, 0], a: [-step, 0], 'ф': [-step, 0], arrowright: [step, 0], d: [step, 0], 'в': [step, 0] }[k];
-      if (m) { e.preventDefault(); world.cam.x += m[0]; world.cam.y += m[1]; camApply('glide'); }
-      else if (k === '+' || k === '=') { world.cam.z *= 1.15; camApply('glide'); }
-      else if (k === '-') { world.cam.z /= 1.15; camApply('glide'); }
+      if (m) { e.preventDefault(); camTo({ x: c.x + m[0], y: c.y + m[1] }, 250); }
+      else if (k === '+' || k === '=') camTo({ z: c.z * 1.15 }, 250);
+      else if (k === '-') camTo({ z: c.z / 1.15 }, 250);
     });
     world.mini.addEventListener('click', function (e) {
       var sv = world.mini.querySelector('svg');
       if (!sv) return;
       var pt = sv.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
       var p = pt.matrixTransform(sv.getScreenCTM().inverse());
-      world.cam.x = p.x; world.cam.y = p.y;
-      camApply('glide');
+      camTo({ x: p.x, y: p.y }, 700);
     });
   }
 
@@ -2301,8 +2378,8 @@
       worldHud(g, steps, nowI);
       worldMini(steps, nowI);
       if (!world.cam) world.cam = Object.assign(camAt(world.meI), { z: 0.9 });
-      if (world.follow) { world.follow = false; Object.assign(world.cam, camAt(world.meI)); camApply('glide'); }
-      else camApply('');
+      camApply(true);
+      if (world.follow) { world.follow = false; camTo(camAt(world.meI), 700); }
     }
     worldPop(g, steps, nowI);
   }
@@ -2311,7 +2388,9 @@
     var W = window.SpravyWorld, N = steps.length, L = W.layout(N), P = L.P;
     world.L = L;
     world.meI = nowI < 0 ? N + 1 : nowI + 1;
-    var ground = h('div', { class: 'w-ground', style: 'width:' + L.GW + 'px;height:' + L.H + 'px' });
+    var size = 'width:' + L.GW + 'px;height:' + L.H + 'px';
+    // три шари сцени: земля → полотно з рослинами → «стоячі» елементи (кроки, будівлі, персонаж)
+    var ground = h('div', { class: 'w-ground', style: size }), over = h('div', { class: 'w-over', style: size });
     ground.innerHTML = W.groundSvg(L, world.meI);
     // урвище: острів висить у небі
     ground.append(h('div', { class: 'w-edge front', style: 'top:' + L.H + 'px;width:' + L.GW + 'px' }),
@@ -2325,15 +2404,18 @@
     function bb(cls, x, y, html, kids) {
       var el = h('div', { class: 'w-bb ' + cls, style: 'left:' + x + 'px;top:' + y + 'px' }, kids || null);
       if (html) el.insertAdjacentHTML('afterbegin', html);
-      ground.append(el);
+      over.append(el);
       return el;
     }
     L.clouds.forEach(function (c) {
       var el = h('div', { class: 'w-cloud', style: 'left:' + c.x + 'px;top:' + c.y + 'px;--z:' + c.z + 'px;--s:' + c.s });
-      el.innerHTML = W.art('cloud', 0, 1);
+      el.innerHTML = '<svg viewBox="0 0 240 120" width="240" height="120" aria-hidden="true"><use href="#wt-cloud"/></svg>';
       ground.append(el);
     });
-    L.decor.forEach(function (d) { bb('w-tree w-' + d.t + fog(d.y), d.x, d.y, W.art(d.t, d.v, d.s, d.snow)); });
+    // рослини й гори — на полотні (drawSprites), далекі першими
+    world.sprites = L.decor.slice().sort(function (a, b) { return a.y - b.y; }).map(function (d) {
+      return { id: W.spriteId(d), x: d.x, y: d.y, s: d.s, fog: d.y < fogY - 60 };
+    });
     var c = L.camp;
     bb('w-start w-sign', c.sign[0], c.sign[1], null, h('span', {}, 'Старт'));
     bb('w-house', c.house[0], c.house[1], W.art('house', 0, 1));
@@ -2343,7 +2425,7 @@
     steps.forEach(function (st, k) {
       var p = P[k + 1], state = st.done ? 'done' : k === nowI ? 'now' : 'locked';
       function pick() { if (world && !world.moved) { world.pop = st.id; paintWorld(); } }
-      ground.append(h('button', { type: 'button', class: 'w-node ' + state, style: 'left:' + p[0] + 'px;top:' + p[1] + 'px',
+      over.append(h('button', { type: 'button', class: 'w-node ' + state, style: 'left:' + p[0] + 'px;top:' + p[1] + 'px',
         'aria-label': 'Крок ' + (k + 1) + ': ' + st.title, onclick: pick }));
       var pin = bb('w-pin ' + state, p[0], p[1], null, st.done ? svg(I.check, 22, 3) : h('b', {}, String(k + 1)));
       pin.setAttribute('data-step', String(k + 1));
@@ -2368,9 +2450,11 @@
     // персонаж: на поточному кроці; усе пройдено — біля замку й радіє
     var at = nowI < 0 ? [cs[0] + 120, cs[1] + 80] : P[nowI + 1];
     bb('w-me', at[0], at[1], null, avatarEl(nowI < 0 ? 'cheer' : 'happy', 96));
-    world.tilt = h('div', { class: 'w-tilt' }, ground);
-    world.ground = ground;
-    world.stage.replaceChildren(world.tilt);
+    var pos = 'left:' + W.CAM.tx * 100 + '%;top:' + W.CAM.ty * 100 + '%';
+    world.tilt = h('div', { class: 'w-tilt', style: pos }, ground);
+    world.tilt2 = h('div', { class: 'w-tilt', style: pos }, over);
+    world.ground = ground; world.over = over;
+    world.stage.replaceChildren(world.tilt, world.canvas, world.tilt2);
   }
 
   /** Табло: назва цілі, смужка прогресу, етап і місцевість, де ви зараз. */

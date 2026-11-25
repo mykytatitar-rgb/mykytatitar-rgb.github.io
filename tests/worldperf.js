@@ -22,7 +22,8 @@ const VARIANTS = {
   'no-decor': '.w-tree{display:none!important}',
   'no-clouds': '.w-cloud,.w-cloud2d{display:none!important}',
   'no-ground-anim': '.wr-shine{animation:none!important}',
-  'no-pulse': '.w-node.now{animation:none!important}'
+  'no-pulse': '.w-node.now{animation:none!important}',
+  'ground-only': '.w-bb,.w-cloud,.w-node,.w-sky>*{display:none!important}'
 };
 
 const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');

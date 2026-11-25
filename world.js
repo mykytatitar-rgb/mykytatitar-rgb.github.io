@@ -5,6 +5,10 @@
 (function () {
   'use strict';
 
+  var TILT = 56;               // нахил землі до екрана, градусів
+  /** Камера сцени: перспектива (px), точка зору й точка, де стоїть фокус камери, — частки ширини й висоти екрана.
+      CSS сцени ставиться з цих чисел (tasks.js), і той самий розрахунок малює рослини на полотні (project). */
+  var CAM = { d: 900, ox: 0.5, oy: 0.2, tx: 0.5, ty: 0.64 };
   var GW = 1400;               // ширина острова, px землі
   var STEP = 170;              // відстань між сусідніми кроками
   var TOP = 420, BOT = 400;    // місце для замку за фінішем і для хатинки перед стартом
@@ -220,9 +224,9 @@
     }
     // хмари: обабіч острова й під урвищем, нижче землі — острів ніби висить у небі
     var clouds = [];
-    for (var cl = 0; cl < Math.ceil(L.H / 380); cl++) {
-      clouds.push({ x: r1(-250 - rnd(cl * 13.7) * 260), y: r1(cl * 380 + rnd(cl * 3.3) * 200), z: -Math.round(150 + rnd(cl * 5.1) * 250), s: r1(0.8 + rnd(cl * 7.7) * 0.9) });
-      clouds.push({ x: r1(GW + 250 + rnd(cl * 17.9) * 260), y: r1(cl * 380 + 190 + rnd(cl * 2.2) * 200), z: -Math.round(150 + rnd(cl * 6.4) * 250), s: r1(0.8 + rnd(cl * 9.9) * 0.9) });
+    for (var cl = 0; cl < Math.ceil(L.H / 760); cl++) {
+      clouds.push({ x: r1(-250 - rnd(cl * 13.7) * 260), y: r1(cl * 760 + rnd(cl * 3.3) * 300), z: -Math.round(150 + rnd(cl * 5.1) * 250), s: r1(0.9 + rnd(cl * 7.7) * 0.9) });
+      clouds.push({ x: r1(GW + 250 + rnd(cl * 17.9) * 260), y: r1(cl * 760 + 380 + rnd(cl * 2.2) * 300), z: -Math.round(150 + rnd(cl * 6.4) * 250), s: r1(0.9 + rnd(cl * 9.9) * 0.9) });
     }
     for (var b = 0; b < 4; b++) clouds.push({ x: r1(150 + b * 380 + rnd(b * 4.4) * 120), y: r1(L.H + 140 + rnd(b * 8.8) * 220), z: -Math.round(260 + rnd(b * 1.7) * 200), s: r1(1 + rnd(b * 2.6) * 0.8) });
     L.lakes = lakes; L.decor = decor; L.flowers = flowers; L.clouds = clouds;
@@ -249,6 +253,8 @@
       o.push('<path class="gtx" d="M' + tx + ' ' + ty + 'l-2 -7M' + (tx + 3) + ' ' + ty + 'l1 -8M' + (tx + 6) + ' ' + ty + 'l3 -6"/>');
     }
     o.push('</pattern>');
+    // хмара — один раз; хмари під островом ставлять її через <use>
+    o.push('<g id="wt-cloud">' + inline(ART.cloud()[2]) + '</g>');
     L.zones.forEach(function (z) {
       o.push('<linearGradient id="wz' + z.i + '" x1="0" y1="0" x2="0" y2="1">' +
         '<stop offset="0" class="zs-' + z.key + '" stop-opacity="0"/><stop offset=".1" class="zs-' + z.key + '" stop-opacity=".8"/>' +
@@ -270,8 +276,11 @@
       for (var x = -60; x <= GW + 60; x += 30) d += (d ? ' L' : 'M') + x + ' ' + r1(riverY(L.river, x));
       o.push('<path class="wr-bank" d="' + d + '"/><path class="wr-water" d="' + d + '"/><path class="wr-deep" d="' + d + '"/><path class="wr-shine" d="' + d + '"/>');
     }
+    // квіти: по одному шляху на колір (сотні кіл — це сотні вузлів)
+    var fl = ['', '', '', ''];
+    L.flowers.forEach(function (f) { fl[f.c] += 'M' + r1(f.x - 5) + ' ' + f.y + 'a5 5 0 1 0 10 0a5 5 0 1 0 -10 0'; });
     o.push('<g class="w-flowers">');
-    L.flowers.forEach(function (f) { o.push('<circle class="fl fl' + f.c + '" cx="' + f.x + '" cy="' + f.y + '" r="5"/>'); });
+    fl.forEach(function (d, c) { if (d) o.push('<path class="fl fl' + c + '" d="' + d + '"/>'); });
     o.push('</g>');
     var road = roadPath(P, P.length - 1);
     o.push('<path class="w-road-edge" d="' + road + '"/><path class="w-road" d="' + road + '"/>' +
@@ -397,6 +406,57 @@
         '<circle class="cl1" cx="98" cy="86" r="32"/><circle class="cl1" cx="148" cy="88" r="30"/><circle class="cl3" cx="108" cy="44" r="22"/>'];
     }
   };
+  /** Кольори малюнків, що ставляться через <use>: стилі документа до їхніх копій не доходять, а змінні — успадковуються. */
+  var CLASS_STYLE = {
+    tk: 'fill:var(--trunk)', lf1: 'fill:var(--leaf1)', lf2: 'fill:var(--leaf2)', lf3: 'fill:var(--leaf3)', lb1: 'fill:var(--lb1)', lb2: 'fill:var(--lb2)',
+    pn1: 'fill:var(--pine1)', pn2: 'fill:var(--pine2)', snow: 'fill:#f4f8ff', ap: 'fill:#e8473b', bry: 'fill:#d23a6a',
+    bk: 'fill:var(--birch)', bm: 'fill:none;stroke:#3b3b3b;stroke-width:2.5;stroke-linecap:round',
+    rk1: 'fill:var(--rock1)', rk2: 'fill:var(--rock2)', rk3: 'fill:var(--rock3)', ms: 'fill:#f5eee0', mc: 'fill:#e0483c', md: 'fill:#fff',
+    rd: 'fill:none;stroke:#5e8f3a;stroke-width:3;stroke-linecap:round', rc: 'fill:#7a4b2a',
+    mt1: 'fill:var(--mt1)', mt2: 'fill:var(--mt2)', mt3: 'fill:var(--mt3)',
+    cl1: 'fill:var(--cloud)', cl2: 'fill:var(--cloud2)', cl3: 'fill:#fff;opacity:.6'
+  };
+  function inline(body) { return body.replace(/class="([\w-]+)"/g, function (m, c) { return CLASS_STYLE[c] ? 'style="' + CLASS_STYLE[c] + '"' : m; }); }
+
+  /* ---------- проєкція й рослини на полотні ----------
+     Кожен «стоячий» елемент у CSS-3D — окремий шар і прохід рендерингу. Тому рослини (їх сотні)
+     малюються на одному полотні: точка землі переводиться в екран тією самою формулою, що й CSS сцени. */
+
+  /** Точка землі (u, v) → екран. cam — { x, y, z } (точка землі у фокусі й наближення), view — { w, h } екрана.
+      Повертає { x, y, k }: екранну точку й масштаб «стоячого» малюнка, або null, якщо точка позаду камери. */
+  function project(cam, view, u, v) {
+    var a = TILT * Math.PI / 180, w = cam.z * (v - cam.y);
+    var X = view.w * CAM.tx + cam.z * (u - cam.x), Y = view.h * CAM.ty + w * Math.cos(a), Z = w * Math.sin(a);
+    if (Z >= CAM.d - 1) return null;
+    var f = CAM.d / (CAM.d - Z), ox = view.w * CAM.ox, oy = view.h * CAM.oy;
+    return { x: ox + (X - ox) * f, y: oy + (Y - oy) * f, k: cam.z * f };
+  }
+  function spriteId(d) { return d.t === 'mountain' ? 'mountain-' + (d.v ? 1 : 0) : decalId(d); }
+  /** SVG рослини чи гори зі справжніми кольорами (для растеризації в картинку); r — роздільність. */
+  function sprite(id, colors, r) {
+    var a = id.indexOf('mountain-') === 0 ? ART.mountain(+id.slice(9)) : DECAL[id]();
+    var body = inline(a[2]).replace(/var\(--([\w-]+)\)/g, function (m, k) { return colors[k] || '#888'; });
+    return { w: a[0], h: a[1], svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(a[0] * r) + '" height="' + Math.round(a[1] * r) +
+      '" viewBox="0 0 ' + a[0] + ' ' + a[1] + '">' + body + '</svg>' };
+  }
+  /** Змінні кольорів, які потрібні рослинам і горам. */
+  var SPRITE_VARS = ['trunk', 'leaf1', 'leaf2', 'leaf3', 'lb1', 'lb2', 'pine1', 'pine2', 'birch', 'rock1', 'rock2', 'rock3', 'mt1', 'mt2', 'mt3'];
+
+  /** Рослини: id малюнка → малюнок. */
+  var DECAL = {
+    pine: function () { return ART.pine(0, false); }, 'pine-s': function () { return ART.pine(0, true); },
+    'round-0': function () { return ART.round(0); }, 'round-1': function () { return ART.round(1); },
+    birch: function () { return ART.birch(); }, 'bush-0': function () { return ART.bush(0); }, 'bush-1': function () { return ART.bush(1); },
+    'rock-0': function () { return ART.rock(0); }, 'rock-2': function () { return ART.rock(2); },
+    mushroom: function () { return ART.mushroom(); }, reed: function () { return ART.reed(); }
+  };
+  function decalId(d) {
+    if (d.t === 'pine') return d.snow ? 'pine-s' : 'pine';
+    if (d.t === 'round' || d.t === 'bush') return d.t + '-' + (d.v === 1 ? 1 : 0);
+    if (d.t === 'rock') return 'rock-' + (d.v === 2 ? 2 : 0);
+    return d.t;
+  }
+
   /** SVG-малюнок kind у масштабі s. Для ялинки a — сніг на гілках; для брами a — номер етапу, b — назва місцевості. */
   function art(kind, v, s, a, b) {
     var x = ART[kind](v, a, b);
@@ -404,7 +464,7 @@
   }
 
   window.SpravyWorld = {
-    layout: layout, groundSvg: groundSvg, roadPath: roadPath, art: art, skyAt: skyAt,
+    TILT: TILT, CAM: CAM, project: project, sprite: sprite, spriteId: spriteId, SPRITE_VARS: SPRITE_VARS, layout: layout, groundSvg: groundSvg, roadPath: roadPath, art: art, skyAt: skyAt,
     zoneOfStep: zoneOfStep, zoneInfo: zoneInfo, rnd: rnd, riverY: riverY
   };
 })();

@@ -55,7 +55,7 @@ const camOf = p => p.evaluate(() => getComputedStyle(document.querySelector('.w-
     const lab = await w.locator('.w-label').allTextContents();
     assert(lab.some(t => /1 · Lesson 1/.test(t)) && lab.some(t => /13 · Lesson 13/.test(t)), 'кроки підписані від 1 до 13');
     assert(await w.locator('.w-me svg.avatar').count() === 1, 'персонаж у світі');
-    assert(await w.locator('.w-tree').count() >= 10, 'світ: дерева навколо');
+    assert(await w.locator('canvas.w-sprites').count() === 1 && await D.evaluate(() => window.SpravyWorld.layout(13).decor.length) >= 10, 'світ: дерева навколо (на полотні)');
     assert(await w.locator('.w-fog').count() === 1, 'туман над непройденим');
     await D.screenshot({ path: SHOT + 'world.png' });
     // прогулянка: тягнути мишею й колесо

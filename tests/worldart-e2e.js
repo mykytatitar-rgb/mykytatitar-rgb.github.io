@@ -65,8 +65,37 @@ const inView = b => !!b && b.x + b.width > 0 && b.x < VW && b.y + b.height > 0 &
     assert(gates.length === 2 && /Етап 2/.test(gates[0]) && /Ліс/.test(gates[0]) && /Етап 3/.test(gates[1]), 'брами етапів з назвами місцевостей: ' + gates.join(' | '));
     assert(await w.locator('.w-bridge').count() === 1, 'річка з мостом на дорозі');
     assert(await w.locator('.w-house').count() === 1 && await w.locator('.w-castle').count() === 1, 'хатинка на старті, замок на фініші');
-    assert(await w.locator('.w-tree').count() >= 25, 'густіший світ: дерев ' + await w.locator('.w-tree').count());
+    assert(await D.evaluate(() => window.SpravyWorld.layout(13).decor.length) >= 25, 'густіший світ: рослин ' + await D.evaluate(() => window.SpravyWorld.layout(13).decor.length));
     assert(await w.locator('.w-shadow').count() >= 25, 'у дерев і будинків є тіні');
+    // рослини на екрані: свої кольори (не чорні силуети) і стоять там, куди їх ставить камера (на своїх тінях)
+    const shot = (await D.screenshot()).toString('base64');
+    const pines = await D.evaluate(async b64 => {
+      const W = window.SpravyWorld;
+      const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const cx = c.getContext('2d'); cx.drawImage(img, 0, 0);
+      // камера — з того, як стоїть земля на екрані
+      const m = new DOMMatrix(getComputedStyle(document.querySelector('.w-ground')).transform);
+      const z = parseFloat(/scale\(([\d.]+)\)/.exec(document.querySelector('.w-tilt').style.transform)[1]);
+      const cam = { x: -m.m41, y: -m.m42, z }, view = { w: innerWidth, h: innerHeight };
+      const ui = [...document.querySelectorAll('.w-bar, .w-mini, .w-ctrl, .w-pop, .w-over .w-bb')].map(e => e.getBoundingClientRect());
+      const out = [];
+      W.layout(13).decor.filter(d => d.t === 'pine').forEach(d => {
+        const p = W.project(cam, view, d.x, d.y); if (!p) return;
+        const w = 70 * d.s * p.k, h = 124 * d.s * p.k;
+        const sx = Math.round(p.x - w * 0.12), sy = Math.round(p.y - h * 0.42);
+        if (sy < innerHeight * 0.3 || sy > innerHeight - 4 || sx < 4 || sx > innerWidth - 4 || w < 14) return;
+        if (ui.some(u => sx > u.left - 4 && sx < u.right + 4 && sy > u.top - 4 && sy < u.bottom + 4)) return;
+        const px = cx.getImageData(sx, sy, 1, 1).data;
+        out.push([px[0], px[1], px[2]]);
+      });
+      const st = getComputedStyle(document.querySelector('.world'));
+      const hex = v => { const x = st.getPropertyValue(v).trim().replace('#', ''); return [0, 2, 4].map(i => parseInt(x.slice(i, i + 2), 16)); };
+      return { px: out, pine: [hex('--pine1'), hex('--pine2')] };
+    }, shot);
+    const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 24);
+    const hit = pines.px.filter(px => pines.pine.some(c => near(px, c)));
+    assert(pines.px.length >= 5 && hit.length >= pines.px.length * 0.7, 'ялинки зелені й стоять на своїх місцях: ' + hit.length + ' з ' + pines.px.length + ' ' + JSON.stringify(pines.px.slice(0, 4)));
     // табло: прогрес і етап
     const hud = await w.locator('.w-bar').textContent();
     assert(/6 з 13/.test(hud) && /Етап 2/.test(hud) && /Ліс/.test(hud), 'табло: «6 з 13 · Етап 2: Ліс»: ' + hud);
