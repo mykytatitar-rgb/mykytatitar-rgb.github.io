@@ -39,7 +39,7 @@ async function open(browser, hour, opts) {
   const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
   await p.goto(SITE + '/'); await p.fill('#lgEmail', 'me@x'); await p.fill('#lgPass', 'p'); await p.click('#lgBtn');
   await p.waitForSelector('#app:not([hidden])'); await sleep(1200);
-  if (!opts) { await p.click('#views .nav-item:has-text("Сьогодні")'); await sleep(400); }
+  if (!opts || !opts.isMobile) { await p.click('#views .nav-item:has-text("Сьогодні")'); await sleep(400); }
   return p;
 }
 (async () => {
@@ -73,6 +73,26 @@ async function open(browser, hour, opts) {
     assert(/Morning run/.test(wt) && /Lesson 5/.test(wt), 'перемоги сьогодні праворуч: ' + wt);
     assert(!(await main.locator('.group-label.win').isVisible().catch(() => false)), 'у списку зліва зроблене не повторюється');
     await D.screenshot({ path: '/tmp/claude-0/-home-user/bafb89b7-c7f8-578b-95e4-6ee3fa365e31/scratchpad/today-side.png' });
+    // та сама колонка дня в «Зараз» і «Важливі» — там теж одна вузька колонка
+    for (const v of ['Зараз', 'Важливі']) {
+      await D.click('#views .nav-item:has-text("' + v + '")'); await sleep(400);
+      const vs = D.locator('#board .today-side'), vm = D.locator('#board .today-main');
+      const a1 = await vs.boundingBox().catch(() => null), b1 = await vm.boundingBox().catch(() => null);
+      assert(a1 && b1 && await vs.isVisible() && a1.x >= b1.x + b1.width - 4, '«' + v + '»: колонка дня праворуч');
+      assert(/Зараз 13:00/.test(await vs.locator('.ds-day').textContent().catch(() => '')), '«' + v + '»: у ній той самий день');
+    }
+    assert(await D.locator('#board .now-head').count() === 0, 'з «Важливих» «Зараз» не протікає');
+    await D.click('#views .nav-item:has-text("Зараз")'); await sleep(300);
+    assert(await D.locator('#board .now-head').count() === 1 && await D.locator('#board .today-main .now-head').count() === 1, '«Зараз» зберіг свою картку зліва');
+    await D.screenshot({ path: '/tmp/claude-0/-home-user/bafb89b7-c7f8-578b-95e4-6ee3fa365e31/scratchpad/now-side.png' });
+    await D.click('#views .nav-item:has-text("Сьогодні")'); await sleep(300);
+    // дуже широкий екран (1920): розділ ширшає й стоїть по центру — без великої порожнечі праворуч
+    const X = await open(browser, '13:00', { viewport: { width: 1920, height: 1080 } });
+    await X.click('#views .nav-item:has-text("Зараз")'); await sleep(400);
+    const gap = await X.evaluate(() => { const s = document.querySelector('#board .today-side').getBoundingClientRect(), m = document.querySelector('#board .today-main').getBoundingClientRect(), b = document.querySelector('#board').getBoundingClientRect();
+      return { right: Math.round(b.right - s.right), left: Math.round(m.left - b.left) }; });
+    assert(gap.right < 220 && Math.abs(gap.right - gap.left) < 80, '1920 px: праворуч лишилось ' + gap.right + ' px, ліворуч ' + gap.left + ' px — розділ по центру');
+    await X.screenshot({ path: '/tmp/claude-0/-home-user/bafb89b7-c7f8-578b-95e4-6ee3fa365e31/scratchpad/now-1920.png' });
     // вечір: плану більше, ніж лишилось дня
     const E = await open(browser, '21:00');
     const warn = E.locator('#board .today-side .ds-warn');

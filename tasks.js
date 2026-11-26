@@ -1702,11 +1702,11 @@
     var open = tasks().filter(isOpenNow);
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
     var starred = sorted(open.filter(function (t) { return t.starred; }), 'date');
-    b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
+    b.replaceChildren(installBar() || '', dayLayout('', [
       h('h2', {}, 'Важливі'),
       first && !mobileMq.matches ? addBlock(first.id, { starred: true }) : null,
       starred.length ? starred.map(function (t) { return taskRow(t, { showList: true }); })
-        : h('div', { class: 'empty' }, 'Позначте важливі завдання зірочкою, і вони з\'являться тут.')));
+        : h('div', { class: 'empty' }, 'Позначте важливі завдання зірочкою, і вони з\'являться тут.')]));
   }
 
   /* ---------- «План на день»: запрошення ----------
@@ -1737,9 +1737,10 @@
     var now = byRank(sorted(rest.filter(function (t) { return t.due === t0; }), 'mine'));
     var first = lists().filter(function (l) { return l.visible; })[0] || lists()[0];
     // зроблене сьогодні — на видноті: «я нічого не встиг» рідко правда
-    var done = sorted(tasks().filter(function (t) { return t.done && !t.parentId && t.doneAt === t0; }), 'mine');
+    var done = doneToday();
 
-    var main = h('div', { class: 'today-main' },
+    var kids = [
+      h('h2', { class: 'sr-only' }, 'Сьогодні'),
       hero('today'),
       roadmap(),
       eveningInvite() || planInvite(false),
@@ -1764,11 +1765,22 @@
       // на широкому екрані зроблене — у колонці дня праворуч (див. tasks.css), тут лише коли її немає
       done.length ? h('div', { class: 'done-block' }, h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
         done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })) : null,
-      h('button', { type: 'button', class: 'quiet-link close-day', onclick: openEvening }, svg(I.moon || I.target, 16), 'Закрити день'));
-    var openToday = focusOpen.concat(now, late);
-    b.replaceChildren(installBar() || '', h('section', { class: 'flat today-wrap' },
-      h('h2', { class: 'sr-only' }, 'Сьогодні'),
-      h('div', { class: 'today-grid' }, main, todaySide(openToday, done))));
+      h('button', { type: 'button', class: 'quiet-link close-day', onclick: openEvening }, svg(I.moon || I.target, 16), 'Закрити день')];
+    b.replaceChildren(installBar() || '', dayLayout('', kids));
+  }
+  /** Відкрите на сьогодні (головне, на сьогодні, з минулих днів) і зроблене сьогодні — для «Сьогодні» й колонки дня. */
+  function todayOpen() {
+    var t0 = today();
+    return tasks().filter(function (t) { return !t.done && !t.parentId && (isFocus(t) || (t.due && t.due <= t0)); });
+  }
+  function doneToday() {
+    var t0 = today();
+    return sorted(tasks().filter(function (t) { return t.done && !t.parentId && t.doneAt === t0; }), 'mine');
+  }
+  /** Розділ в одну колонку («Зараз», «Сьогодні», «Важливі») + колонка дня праворуч, коли є місце (див. tasks.css). */
+  function dayLayout(cls, kids) {
+    return h('section', { class: 'flat today-wrap' + (cls ? ' ' + cls : '') },
+      h('div', { class: 'today-grid' }, h('div', { class: 'today-main' }, kids), todaySide()));
   }
 
   /* ---------- «Сьогодні»: колонка дня ----------
@@ -1790,7 +1802,8 @@
       return { t: t, s: st, e: t.end ? minutesOf(t.end) : Math.min(st + 60, 1439) };
     }).sort(function (a, b) { return a.s - b.s; });
   }
-  function todaySide(open, done) {
+  function todaySide() {
+    var open = todayOpen(), done = doneToday();
     var d = new Date(), nowM = d.getHours() * 60 + d.getMinutes(), t0 = today();
     var startM = DAY_START * 60, endM = DAY_END * 60, leftM = Math.max(0, endM - Math.max(nowM, startM));
     var timed = timedToday();
@@ -2738,12 +2751,12 @@
           q.length > 2 ? ' · ще ' + (q.length - 2) : '') : null
       ];
     }
-    b.replaceChildren(installBar() || '', h('section', { class: 'flat now' },
+    b.replaceChildren(installBar() || '', dayLayout('now', [
       hero('now'),
       h('div', { class: 'now-head' }, h('h2', {}, 'Зараз'), energy),
       roadmap(),
       eveningInvite() || planInvite(true),
-      body));
+      body]));
   }
 
   /** «Не зараз»: у кінець черги до завтра. Нічого не змінює в самій справі. */

@@ -932,7 +932,7 @@ body {
 .goal-grid { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 1.1rem; align-items: start; }
 .goal-main { min-width: 0; }
 .goal-view .rm-track.rm-wide { height: 11.5rem; margin-bottom: 1.6rem; }
-.flat.wide.goal-view { width: min(84rem, 100%); }
+.flat.wide.goal-view { width: min(84rem, 100%); margin-inline: auto; }
 .rm-track .rm-node { cursor: default; }
 .rm-track button.rm-node { cursor: pointer; font: inherit; font-weight: 700; font-size: .85rem; transition: transform .15s; }
 .rm-track button.rm-node:hover { transform: translate(-50%, -50%) scale(1.1); }
@@ -1264,12 +1264,17 @@ button.w-node.now::after { content: ''; position: absolute; inset: -20px; border
 
 
 /* ---------- «Сьогодні»: дві колонки на широкому екрані ---------- */
-.flat.today-wrap { width: min(70rem, 100%); container-type: inline-size; }
+.flat.today-wrap { width: min(84rem, 100%); margin-inline: auto; container-type: inline-size; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; align-items: start; }
 .today-main { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
 .today-side { display: none; }
 @container (min-width: 60rem) {
   .today-grid { grid-template-columns: minmax(0, 1fr) 20rem; }
+}
+@container (min-width: 76rem) {
+  .today-grid { grid-template-columns: minmax(0, 1fr) 23rem; }
+}
+@container (min-width: 60rem) {
   .today-side { display: flex; flex-direction: column; gap: .8rem; position: sticky; top: .5rem; padding-top: .3rem; }
   .today-main .done-block { display: none; }
 }
