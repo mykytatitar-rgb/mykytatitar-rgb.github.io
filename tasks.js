@@ -23,7 +23,7 @@
   var UI_KEY = 'spravy.ui';           // налаштування цього пристрою: тема, розмір, сортування
   var IMPORT_KEY = 'spravy.import';   // перенесення з посилання, що чекає входу
 
-  var K_TASK = 'todo_task', K_LIST = 'todo_list';
+  var K_TASK = 'todo_task', K_LIST = 'todo_list', K_BUILD = 'goal_build';   // goal_build — збудоване у світі цілі
   var PUSH_DELAY = 1200;
   var PULL_MS = 20000;                // як часто дивитися, чи не змінилось щось на іншому пристрої
   var RETRY_MS = 15000;
@@ -289,7 +289,7 @@
     };
   }
 
-  var db = { lists: {}, tasks: {} };
+  var db = { lists: {}, tasks: {}, builds: {} };
   var outbox = {};
   var snap = {};        // "kind/id" → JSON запису, яким його востаннє бачив обмін
   var since = null;
@@ -298,19 +298,27 @@
 
   var ui = { view: 'board', openDone: {}, sort: {}, size: 17, theme: 'auto', mList: '' };
 
-  function bagOf(kind) { return kind === K_TASK ? db.tasks : kind === K_LIST ? db.lists : null; }
+  function bagOf(kind) { return kind === K_TASK ? db.tasks : kind === K_LIST ? db.lists : kind === K_BUILD ? db.builds : null; }
+  /** Збудоване у світі цілі: id — id цілі; blocks — [x, y, z, тип] лише ваші блоки (основу світ будує з кроків). */
+  function mkBuild(o) {
+    return { id: String(o.id), blocks: (Array.isArray(o.blocks) ? o.blocks : []).filter(function (b) {
+      return Array.isArray(b) && b.length === 4 && b.every(function (v) { return v === Math.round(v) && Math.abs(v) < 4096; }) && b[3] >= 1 && b[3] <= 8;
+    }).slice(0, 5000) };
+  }
 
   function eachRec(fn) {
     Object.keys(db.lists).forEach(function (id) { fn(K_LIST, db.lists[id]); });
     Object.keys(db.tasks).forEach(function (id) { fn(K_TASK, db.tasks[id]); });
+    Object.keys(db.builds).forEach(function (id) { fn(K_BUILD, db.builds[id]); });
   }
 
   function loadLocal() {
     var raw = readJSON(DB_KEY, null);
-    db = { lists: {}, tasks: {} };
+    db = { lists: {}, tasks: {}, builds: {} };
     if (raw && raw.lists && raw.tasks) {
       Object.keys(raw.lists).forEach(function (id) { db.lists[id] = mkList(raw.lists[id]); });
       Object.keys(raw.tasks).forEach(function (id) { db.tasks[id] = mkTask(raw.tasks[id]); });
+      Object.keys(raw.builds || {}).forEach(function (id) { db.builds[id] = mkBuild(raw.builds[id]); });
       ready = true;
     }
     outbox = readJSON(OUT_KEY, {}) || {};
@@ -327,7 +335,7 @@
   function saveUi() { lsSet(UI_KEY, JSON.stringify(ui)); }
 
   function forgetLocal() {
-    db = { lists: {}, tasks: {} };
+    db = { lists: {}, tasks: {}, builds: {} };
     outbox = {}; snap = {}; since = null; ready = false;
     lsDel(DB_KEY); lsDel(OUT_KEY); lsDel(SINCE_KEY);
   }
@@ -725,7 +733,7 @@
   function pull() {
     var full = !since;
     var path = '/rest/v1/records?select=kind,id,data,deleted,updated_at' +
-      '&kind=in.(' + K_TASK + ',' + K_LIST + ')&order=updated_at.asc,kind.asc,id.asc';
+      '&kind=in.(' + K_TASK + ',' + K_LIST + ',' + K_BUILD + ')&order=updated_at.asc,kind.asc,id.asc';
     if (!full) {
       var from = Date.parse(String(since).replace(/(\.\d{3})\d+/, '$1')) - OVERLAP_MS;
       path += '&updated_at=gte.' + encodeURIComponent(new Date(from).toISOString());
@@ -778,7 +786,8 @@
       return true;
     }
     if (!row.data || typeof row.data !== 'object') return false;
-    var rec = row.kind === K_TASK ? mkTask(Object.assign({}, row.data, { id: row.id })) : mkList(Object.assign({}, row.data, { id: row.id }));
+    var mk = row.kind === K_TASK ? mkTask : row.kind === K_LIST ? mkList : mkBuild;
+    var rec = mk(Object.assign({}, row.data, { id: row.id }));
     if (row.kind === K_TASK && !rec.seen && /^\d{4}-\d{2}-\d{2}/.test(row.updated_at || '')) rec.seen = row.updated_at.slice(0, 10);
     var j = JSON.stringify(rec);
     if (snap[key] === j && bag[row.id]) return false;
@@ -1095,13 +1104,14 @@
     else if (kind === 'calform') window.SpravyCal.closeForm();
     else if (kind === 'voice') closeVoice();
     else if (kind === 'world') closeWorld();
+    else if (kind === 'voxel') closeVoxel();
   }
   /** Закрити всі вікна разом і прибрати їхні кроки з історії одним стрибком. */
   function closeOverlays() {
     var n = overlays.length;
     if (!n) return;
     overlays = [];
-    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true); closeVoice(true); closeWorld(true);
+    closeKick(true); closeHelp(true); closePlan(true); closeSheet(true); closeNav(true); window.SpravyCal.closeForm(true); closeVoice(true); closeWorld(true); closeVoxel(true);
     if (drawerTask) closeDrawer(true);
     skipPops++;
     try { history.go(-n); } catch (e) { skipPops--; }
@@ -1125,6 +1135,7 @@
     else if (kind === 'calform') window.SpravyCal.closeForm(true);
     else if (kind === 'voice') closeVoice(true);
     else if (kind === 'world') closeWorld(true);
+    else if (kind === 'voxel') closeVoxel(true);
   });
 
   /* ---------- шапка й нижня панель телефона ---------- */
@@ -2034,7 +2045,8 @@
         h('span', { class: 'rm-kicker' }, svg(I.target, 14), 'Ціль'),
         h('span', { class: 'rm-head-r' },
           dl ? h('span', { class: 'rm-deadline' + (left !== null && left <= 2 ? ' soon' : '') }, svg(I.cal, 14), dl) : null,
-          !isH && childrenOf(g.id).length ? h('button', { type: 'button', class: 'rm-world-btn', onclick: openWorld }, svg(I.map, 15), 'Мапа') : null)),
+          !isH && childrenOf(g.id).length ? h('button', { type: 'button', class: 'rm-world-btn', onclick: openWorld }, svg(I.map, 15), 'Мапа') : null,
+          !isH && childrenOf(g.id).length ? h('button', { type: 'button', class: 'rm-build-btn', onclick: openVoxel }, svg(I.grid, 15), 'Будувати') : null)),
       h('button', { type: 'button', class: 'rm-title', onclick: function () { openDrawer(g.id); } }, g.title),
       h('div', { class: 'rm-info' }, info),
       track,
@@ -2673,6 +2685,99 @@
         } }, svg(I.check, 15, 2.5), 'Зроблено'),
         t.done ? null : h('button', { type: 'button', class: 'btn', onclick: function () { leaveWorld('kick'); startKick(t); } }, svg(I.play, 14), 'Почати'),
         h('button', { type: 'button', class: 'btn', onclick: function () { var id = t.id; leaveWorld('drawer'); drawerTask = id; render(); } }, 'Відкрити картку'))));
+  }
+
+  /* ---------- «Будувати»: блоковий світ цілі ----------
+     Світ — нагорода, а не заміна справ: кожен виконаний крок дає BLOCKS_PER_STEP блоків, будувати можна лише
+     заробленим; поточний крок і «Почати» завжди внизу; через VOXEL_REMIND_MIN хвилин — м'яка підказка
+     повернутися. Рушій (voxel.js) вантажиться лише тут. Зберігаються тільки ваші блоки (запис goal_build). */
+  var BLOCKS_PER_STEP = 12, VOXEL_REMIND_MIN = 10;
+  var voxel = null;
+  function openVoxel() {
+    var g = goalTask();
+    if (!g || voxel) return;
+    if (window.SpravyVoxel) { buildVoxel(); return; }
+    var sc = document.createElement('script');
+    sc.src = 'voxel.js';
+    sc.onload = function () { if (!voxel && goalTask()) buildVoxel(); };
+    sc.onerror = function () { toast('Не вдалося завантажити світ. Перевірте з\'єднання.'); };
+    document.head.append(sc);
+  }
+  function dropVoxel() {
+    clearTimeout(voxel.remind);
+    if (voxel.engine) voxel.engine.destroy();
+    voxel.layer.remove();
+    voxel = null;
+  }
+  function closeVoxel(fromBack) {
+    if (!voxel) return;
+    dropVoxel();
+    if (!fromBack) popOverlay('voxel');
+  }
+  function buildVoxel() {
+    var g = goalTask(), steps = sorted(childrenOf(g.id), 'mine');
+    var nowI = steps.findIndex(function (x) { return !x.done; }), cur = nowI < 0 ? null : steps[nowI];
+    var states = steps.map(function (x, k) { return x.done ? 'done' : k === nowI ? 'now' : 'locked'; });
+    var earned = steps.filter(function (x) { return x.done; }).length * BLOCKS_PER_STEP;
+    function blocks() { return (db.builds[g.id] || { blocks: [] }).blocks; }
+    function save(list) { db.builds[g.id] = mkBuild({ id: g.id, blocks: list }); commit(); voxel.engine.setBlocks(list); paint(); }
+    var canvas = h('canvas', { class: 'vx-canvas', 'aria-label': 'Блоковий світ цілі' });
+    var budget = h('span', { class: 'vx-budget' }), pal = h('div', { class: 'vx-pal', role: 'group', 'aria-label': 'Блок' });
+    var remind = h('div', { class: 'vx-remind', hidden: true });
+    var layer = h('div', { class: 'vx', role: 'dialog', tabindex: '-1', 'aria-label': 'Світ цілі «' + g.title + '»' },
+      canvas,
+      h('div', { class: 'vx-bar' }, h('div', { class: 'vx-title' }, h('small', {}, 'Світ цілі'), h('b', {}, g.title)), budget, pal,
+        h('button', { type: 'button', class: 'w-close', 'aria-label': 'Закрити світ', onclick: function () { closeVoxel(); } }, svg(I.close, 20))),
+      remind,
+      h('div', { class: 'vx-step' },
+        cur ? [h('span', {}, h('small', {}, 'Крок на сьогодні'), cur.title),
+          h('button', { type: 'button', class: 'btn primary', onclick: function () { dropVoxel(); swapOverlay('voxel', 'kick'); startKick(cur); } }, svg(I.play, 14), 'Почати')]
+          : h('span', {}, h('small', {}, 'Усі кроки пройдено'), 'Будуйте на радість'),
+        h('small', { class: 'vx-hint' }, 'Клік — поставити блок · Shift+клік — прибрати свій · тягнути — обертати · WASD — іти')));
+    voxel = { layer: layer, sel: 1, engine: null, remind: 0 };
+    function paint() {
+      var left = earned - blocks().length;
+      budget.textContent = 'Блоків: ' + left + ' з ' + earned;
+      budget.classList.toggle('empty', left <= 0);
+      pal.replaceChildren.apply(pal, window.SpravyVoxel.PALETTE.map(function (p) {
+        var c = window.SpravyVoxel.COLORS[p[0]];
+        return h('button', { type: 'button', 'aria-pressed': String(voxel.sel === p[0]), title: p[1], style: '--c:rgb(' + c.join(',') + ')',
+          onclick: function () { voxel.sel = p[0]; paint(); } }, h('i', {}), p[1]);
+      }));
+    }
+    document.body.append(layer);
+    pushOverlay('voxel');
+    voxel.engine = window.SpravyVoxel.create(canvas, {
+      states: states, blocks: blocks(), sky: [0.78, 0.89, 1],
+      onHit: function (cell, prev, remove, own) {
+        var list = blocks().slice();
+        if (remove) {
+          if (!own) { toast('Прибрати можна лише свої блоки: споруди кроків — ваші перемоги.'); return; }
+          save(list.filter(function (b) { return !(b[0] === cell[0] && b[1] === cell[1] && b[2] === cell[2]); }));
+          return;
+        }
+        if (!prev || prev[1] < 1 || prev[1] > 24) return;
+        if (list.length >= earned) { toast('Блоки скінчилися. Кожен виконаний крок дає ще ' + BLOCKS_PER_STEP + '.'); return; }
+        list.push([prev[0], prev[1], prev[2], voxel.sel]);
+        save(list);
+      }
+    });
+    if (!voxel.engine) { closeVoxel(); toast('Цей браузер не показує 3D (WebGL). Спробуйте Chrome чи Edge.'); return; }
+    layer.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') return;
+      e.stopPropagation();
+      var m = { w: [0, -2], 'ц': [0, -2], arrowup: [0, -2], s: [0, 2], 'і': [0, 2], arrowdown: [0, 2], a: [-2, 0], 'ф': [-2, 0], arrowleft: [-2, 0], d: [2, 0], 'в': [2, 0], arrowright: [2, 0] }[e.key.toLowerCase()];
+      if (m) { e.preventDefault(); voxel.engine.walk(m[0], m[1]); }
+    });
+    voxel.remind = setTimeout(function () {
+      if (!voxel) return;
+      remind.hidden = false;
+      remind.replaceChildren(h('span', {}, VOXEL_REMIND_MIN + ' хвилин у світі. ' + (cur ? 'Повернемось до кроку «' + cur.title + '»?' : 'Може, перерва?')),
+        cur ? h('button', { type: 'button', class: 'btn primary', onclick: function () { dropVoxel(); swapOverlay('voxel', 'kick'); startKick(cur); } }, 'До кроку') : null,
+        h('button', { type: 'button', class: 'btn', onclick: function () { remind.hidden = true; } }, 'Ще трохи'));
+    }, VOXEL_REMIND_MIN * 60000);
+    paint();
+    layer.focus({ preventScroll: true });
   }
 
   /* ---------- «Зараз»: одна справа ---------- */
