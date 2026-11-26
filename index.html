@@ -45,8 +45,9 @@
 
 <div class="app" id="app" hidden>
   <aside class="side" id="side">
-    <div class="brand"><span class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Справи</div>
-    <button class="btn-create" id="create" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Нове завдання</button>
+    <div class="brand"><span class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><span class="lbl">Справи</span>
+      <button class="icon-btn side-toggle" id="sideToggle" type="button" aria-label="Згорнути панель" aria-expanded="true" title="Згорнути панель ( [ )"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15M15.5 10l-2 2 2 2"/></svg></button></div>
+    <button class="btn-create" id="create" type="button" aria-label="Нове завдання" title="Нове завдання ( n )"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Нове завдання</span></button>
     <nav class="nav" id="views"></nav>
     <div class="side-label"><span>Списки</span></div>
     <div class="nav" id="lists"></div>

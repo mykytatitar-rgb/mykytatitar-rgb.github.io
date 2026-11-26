@@ -1035,9 +1035,22 @@
     root.style.setProperty('--fs', ui.size + 'px');
     if (ui.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', ui.theme);
     $('app').classList.toggle('view-cal', ui.view === 'calendar');
+    applySide();
     renderSide(); renderHead(); renderTop(); renderNav(); renderBoard(); renderDrawer();
     if (world) paintWorld();
   }
+
+  /* ---------- ліва панель-шторка ----------
+     На комп'ютері панель можна згорнути у вузьку смужку з іконками розділів: більше місця справам і менше
+     відволікання. Стан — налаштування цього пристрою; «[» — згорнути чи розгорнути. На телефоні своє меню. */
+  function applySide() {
+    var c = ui.side === 'collapsed', b = $('sideToggle');
+    $('app').classList.toggle('side-collapsed', c);
+    b.setAttribute('aria-expanded', String(!c));
+    b.setAttribute('aria-label', c ? 'Розгорнути панель' : 'Згорнути панель');
+    b.title = (c ? 'Розгорнути' : 'Згорнути') + ' панель ( [ )';
+  }
+  function toggleSide() { ui.side = ui.side === 'collapsed' ? '' : 'collapsed'; saveUi(); applySide(); }
 
   /** Список, відкритий на телефоні (вкладка), — або перший видимий. */
   function currentList() {
@@ -1197,8 +1210,8 @@
     ];
     $('views').replaceChildren.apply($('views'), views.map(function (v) {
       return h('button', { type: 'button', class: 'nav-item' + (v[0] === 'goal' ? ' phone-keep' : ''), 'aria-current': String(ui.view === v[0]),
-        onclick: function () { ui.view = v[0]; saveUi(); closeNav(); render(); } },
-        svg(v[2], 20), v[1], h('span', { class: 'count' }, v[3] || ''));
+        title: v[1], 'aria-label': v[1], onclick: function () { ui.view = v[0]; saveUi(); closeNav(); render(); } },
+        svg(v[2], 20), h('span', { class: 'lbl' }, v[1]), h('span', { class: 'count' }, v[3] || ''));
     }));
     var cur = mobileMq.matches && ui.view === 'board' ? currentList() : null;
     $('lists').replaceChildren.apply($('lists'), lists().map(function (l) {
@@ -4250,7 +4263,14 @@
       e.preventDefault();
       $('create').click();
     }
+    // «[» (на українській розкладці це «х» — тож за фізичною клавішею) — згорнути чи розгорнути ліву панель
+    if ((e.key === '[' || e.code === 'BracketLeft') && !e.ctrlKey && !e.metaKey && !e.altKey && !/INPUT|TEXTAREA|SELECT/.test(tag) &&
+        !overlays.length && !mobileMq.matches && !$('app').hidden) {
+      e.preventDefault();
+      toggleSide();
+    }
   });
+  $('sideToggle').addEventListener('click', toggleSide);
   $('create').addEventListener('click', function () {
     var l = lists().filter(function (x) { return x.visible; })[0] || lists()[0];
     if (!l) { toast('Спершу створіть список у меню ліворуч'); return; }

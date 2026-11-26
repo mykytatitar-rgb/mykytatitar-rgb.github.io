@@ -1304,3 +1304,24 @@ button.w-node.now::after { content: ''; position: absolute; inset: -20px; border
 .ds-wins ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
 .ds-wins li button { width: 100%; text-align: left; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ds-wins li button::before { content: '✓ '; color: #2fa36f; font-weight: 700; }
+
+
+/* ---------- ліва панель-шторка (лише комп'ютер) ---------- */
+.side-toggle { margin-left: auto; }
+.side-toggle svg { transition: transform .28s ease; }
+@media (min-width: 761px) {
+  .app { transition: grid-template-columns .28s ease; }
+  .app.side-collapsed { grid-template-columns: 4.6rem 1fr; }
+  .app.side-collapsed .side { padding-left: .5rem; padding-right: .5rem; align-items: center; overflow-x: hidden; }
+  .app.side-collapsed .brand { flex-direction: column; gap: .7rem; }
+  .app.side-collapsed .side-toggle { margin-left: 0; }
+  .app.side-collapsed .side-toggle svg { transform: scaleX(-1); }
+  .app.side-collapsed .side .lbl, .app.side-collapsed #views .count, .app.side-collapsed .side-label,
+  .app.side-collapsed #lists, .app.side-collapsed .new-list, .app.side-collapsed .side-foot > :not(.sync), .app.side-collapsed .sync span { display: none; }
+  .app.side-collapsed .btn-create { align-self: center; padding: .75rem; border-radius: .9rem; }
+  .app.side-collapsed #views { align-self: stretch; }
+  .app.side-collapsed .nav-item { justify-content: center; padding: .65rem; }
+  .app.side-collapsed .side-foot { align-items: center; }
+}
+@media (max-width: 760px) { .side-toggle { display: none; } }
+@media (prefers-reduced-motion: reduce) { .app, .side-toggle svg { transition: none; } }
