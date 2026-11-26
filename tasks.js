@@ -1739,8 +1739,7 @@
     // зроблене сьогодні — на видноті: «я нічого не встиг» рідко правда
     var done = sorted(tasks().filter(function (t) { return t.done && !t.parentId && t.doneAt === t0; }), 'mine');
 
-    b.replaceChildren(installBar() || '', h('section', { class: 'flat' },
-      h('h2', { class: 'sr-only' }, 'Сьогодні'),
+    var main = h('div', { class: 'today-main' },
       hero('today'),
       roadmap(),
       eveningInvite() || planInvite(false),
@@ -1762,9 +1761,94 @@
       now.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label' }, 'На сьогодні')),
         h('div', { class: 'rank-group now-group' }, rankRows(now))] : null,
       !focus.length && !late.length && !now.length ? h('div', { class: 'empty' }, 'На сьогодні нічого не заплановано.') : null,
-      done.length ? [h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
-        done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })] : null,
-      h('button', { type: 'button', class: 'quiet-link close-day', onclick: openEvening }, svg(I.moon || I.target, 16), 'Закрити день')));
+      // на широкому екрані зроблене — у колонці дня праворуч (див. tasks.css), тут лише коли її немає
+      done.length ? h('div', { class: 'done-block' }, h('div', { class: 'group-row' }, h('div', { class: 'group-label win' }, 'Зроблено сьогодні · ' + done.length)),
+        done.slice(0, DONE_SHOWN).map(function (t) { return taskRow(t, { showList: true }); })) : null,
+      h('button', { type: 'button', class: 'quiet-link close-day', onclick: openEvening }, svg(I.moon || I.target, 16), 'Закрити день'));
+    var openToday = focusOpen.concat(now, late);
+    b.replaceChildren(installBar() || '', h('section', { class: 'flat today-wrap' },
+      h('h2', { class: 'sr-only' }, 'Сьогодні'),
+      h('div', { class: 'today-grid' }, main, todaySide(openToday, done))));
+  }
+
+  /* ---------- «Сьогодні»: колонка дня ----------
+     На широкому екрані праворуч — те, що при СДУГ найлегше випадає з поля зору: час (скільки дня лишилось
+     і що наступне), чесне навантаження (оцінки справ проти вільного часу), звички тижня й уже зроблене.
+     Звички не рахуються в навантаження: для них своя картка. */
+  var DAY_START = 8, DAY_END = 22;          // межі дня для смужки часу й «скільки лишилось», години
+  function minutesOf(hhmm) { var p = hhmm.split(':'); return +p[0] * 60 + +p[1]; }
+  function clock(m) { return pad(Math.floor(m / 60)) + ':' + pad(m % 60); }
+  /** Справи з часом на сьогодні (і повтори, що випадають на сьогодні) — { t, s, e } у хвилинах, за часом. */
+  function timedToday() {
+    var t0 = today();
+    return tasks().filter(function (t) {
+      if (t.parentId || !t.start) return false;
+      if (t.due === t0) return true;
+      return !t.done && t.repeat !== 'none' && t.due && t.due < t0 && window.SpravyCal.occurrences(t.due, t.repeat, t0, t0).length > 0;
+    }).map(function (t) {
+      var st = minutesOf(t.start);
+      return { t: t, s: st, e: t.end ? minutesOf(t.end) : Math.min(st + 60, 1439) };
+    }).sort(function (a, b) { return a.s - b.s; });
+  }
+  function todaySide(open, done) {
+    var d = new Date(), nowM = d.getHours() * 60 + d.getMinutes(), t0 = today();
+    var startM = DAY_START * 60, endM = DAY_END * 60, leftM = Math.max(0, endM - Math.max(nowM, startM));
+    var timed = timedToday();
+    // навантаження: оцінка справи, а для події — її тривалість; звички окремо
+    var planned = 0, unknown = 0;
+    open.forEach(function (t) {
+      if (isHabit(t)) return;
+      var m = t.est || (t.start && t.end ? minutesOf(t.end) - minutesOf(t.start) : 0);
+      if (m > 0) planned += m; else unknown++;
+    });
+    var over = planned > leftM;
+    var pct = function (m) { return (Math.max(0, Math.min(1, (m - startM) / (endM - startM))) * 100).toFixed(2) + '%'; };
+    var next = timed.filter(function (x) { return !x.t.done && x.s > nowM; })[0];
+    var strip = h('div', { class: 'ts', 'aria-hidden': 'true' },
+      h('i', { class: 'ts-past', style: 'width:' + pct(nowM) }),
+      timed.map(function (x) {
+        return h('i', { class: 'ts-ev' + (x.t.done ? ' done' : ''), style: 'left:' + pct(x.s) + ';width:calc(' + pct(x.e) + ' - ' + pct(x.s) + ')', title: x.t.title });
+      }),
+      nowM >= startM && nowM <= endM ? h('i', { class: 'ts-now', style: 'left:' + pct(nowM) }) : null);
+    var dayCard = h('div', { class: 'gp-card ds-day' },
+      h('div', { class: 'gp-title' }, svg(I.clock, 15), 'День'),
+      h('div', { class: 'ds-big' }, 'Зараз ' + clock(nowM)),
+      h('div', { class: 'ds-sub' }, nowM >= endM ? 'День добігає кінця. Час відпочити.' : 'до ' + DAY_END + ':00 лишилось ' + estLabel(leftM)),
+      strip,
+      h('div', { class: 'ts-hours' }, h('span', {}, DAY_START + ':00'), h('span', {}, '12:00'), h('span', {}, '17:00'), h('span', {}, DAY_END + ':00')),
+      h('div', { class: 'ds-load' + (over ? ' over' : '') }, h('i', { style: 'width:' + (leftM ? Math.min(100, planned / leftM * 100) : 100).toFixed(1) + '%' })),
+      h('div', { class: 'ds-sub' }, planned ? 'Заплановано ' + estLabel(planned) : 'Оцінок часу ще немає', unknown ? ' · ' + unknown + ' без оцінки' : ''),
+      over ? h('div', { class: 'ds-warn' },
+        h('span', {}, 'Плану на ' + estLabel(planned - leftM) + ' більше, ніж лишилось дня. Краще обрати головне, а решту чесно перенести.'),
+        h('button', { type: 'button', class: 'btn', onclick: function () { openPlan('focus'); } }, 'Обрати головне')) : null,
+      next ? h('div', { class: 'ds-next' }, h('b', {}, 'Далі: ' + next.t.title),
+        h('span', {}, clock(next.s) + ' · через ' + estLabel(next.s - nowM))) : null);
+    var habits = tasks().filter(function (t) { return isHabit(t) && !t.done; });
+    var mon = mondayOf(t0);
+    var habitCard = habits.length ? h('div', { class: 'gp-card ds-habits' },
+      h('div', { class: 'gp-title' }, svg(I.repeat, 15), 'Звички тижня'),
+      habits.map(function (t) {
+        var n = perWeek(t.repeat), info;
+        if (n) {
+          var hw = habitWeek(t);
+          info = h('span', { class: 'hb-count' }, hw.done + '/' + hw.need + ' цього тижня');
+        } else {
+          var days = habitDays(t), dots = [];
+          for (var i = 0; i < 7; i++) {
+            var dd = addDays(mon, i);
+            dots.push(h('i', { class: 'hb-dot' + (days[dd] ? ' on' : '') + (dd === t0 ? ' today' : '') + (dd > t0 ? ' future' : ''), title: dueLabel(dd) }));
+          }
+          info = h('span', { class: 'hb-dots' }, dots);
+        }
+        return h('button', { type: 'button', class: 'hb-row', onclick: function () { openDrawer(t.id); } }, h('span', { class: 'hb-name' }, t.title), info);
+      })) : null;
+    var winsCard = h('div', { class: 'gp-card ds-wins' },
+      h('div', { class: 'gp-title' }, svg(I.check, 15), 'Перемоги сьогодні' + (done.length ? ' · ' + done.length : '')),
+      done.length ? h('ul', {}, done.slice(0, 8).map(function (t) {
+        return h('li', {}, h('button', { type: 'button', onclick: function () { openDrawer(t.id); } }, t.title || 'Без назви'));
+      }), done.length > 8 ? h('li', { class: 'ds-sub' }, 'і ще ' + (done.length - 8)) : null)
+        : h('div', { class: 'ds-sub' }, 'Перша справа дня зарахується тут. Почніть з найменшої.'));
+    return h('aside', { class: 'today-side', 'aria-label': 'День' }, dayCard, habitCard, winsCard);
   }
 
   /* ============================================================

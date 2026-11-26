@@ -1261,3 +1261,41 @@ button.w-node.now::after { content: ''; position: absolute; inset: -20px; border
 @media (prefers-reduced-motion: reduce) {
   button.w-node.now::after, .w-me, .w-cloud2d, .world .smoke circle, .world .f1, .world .f2, .world .fg, .w-water, .w-stars, .w-fw i { animation: none; }
 }
+
+
+/* ---------- «Сьогодні»: дві колонки на широкому екрані ---------- */
+.flat.today-wrap { width: min(70rem, 100%); container-type: inline-size; }
+.today-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+.today-main { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.today-side { display: none; }
+@container (min-width: 60rem) {
+  .today-grid { grid-template-columns: minmax(0, 1fr) 20rem; }
+  .today-side { display: flex; flex-direction: column; gap: .8rem; position: sticky; top: .5rem; padding-top: .3rem; }
+  .today-main .done-block { display: none; }
+}
+.ds-big { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ds-sub { color: var(--muted); font-size: .84rem; line-height: 1.35; }
+.ts { position: relative; height: 1.5rem; border-radius: .5rem; background: var(--surface); border: 1px solid var(--line); overflow: hidden; margin-top: .2rem; }
+.ts i { position: absolute; top: 0; bottom: 0; }
+.ts-past { left: 0; background: color-mix(in srgb, var(--muted) 16%, transparent); }
+.ts-ev { top: 3px !important; bottom: 3px !important; border-radius: 4px; background: var(--accent); opacity: .85; min-width: 3px; }
+.ts-ev.done { background: #2fa36f; opacity: .55; }
+.ts-now { width: 2px; background: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ts-hours { display: flex; justify-content: space-between; font-size: .7rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+.ds-load { height: 8px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; margin-top: .3rem; }
+.ds-load i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.ds-load.over i { background: var(--warn); }
+.ds-warn { display: flex; flex-direction: column; align-items: flex-start; gap: .45rem; font-size: .84rem; line-height: 1.35; color: var(--warn); }
+.ds-next { display: flex; flex-direction: column; gap: .1rem; padding: .5rem .6rem; border-radius: .7rem; background: var(--accent-soft); font-size: .88rem; }
+.ds-next span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.hb-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; font-size: .88rem; text-align: left; padding: .2rem 0; }
+.hb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-count { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hb-dots { display: flex; gap: 4px; flex: none; }
+.hb-dot { width: 12px; height: 12px; border-radius: 50%; background: color-mix(in srgb, var(--muted) 22%, var(--surface)); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); }
+.hb-dot.on { background: #2fa36f; border-color: #2fa36f; }
+.hb-dot.today { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.hb-dot.future { opacity: .45; }
+.ds-wins ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+.ds-wins li button { width: 100%; text-align: left; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-wins li button::before { content: '✓ '; color: #2fa36f; font-weight: 700; }
